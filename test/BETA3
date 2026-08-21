@@ -1,0 +1,4083 @@
+import 'package:flutter/material.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+final ValueNotifier<ThemeMode> appThemeMode = ValueNotifier(ThemeMode.dark);
+final ValueNotifier<double> appTextScale = ValueNotifier(1.0);
+
+String obterNomeMes(int mes) {
+  const meses = [
+    'Janeiro',
+    'Fevereiro',
+    'Março',
+    'Abril',
+    'Maio',
+    'Junho',
+    'Julho',
+    'Agosto',
+    'Setembro',
+    'Outubro',
+    'Novembro',
+    'Dezembro'
+  ];
+  return meses[mes - 1];
+}
+
+double parseMoeda(String valor) {
+  if (valor.isEmpty) return 0.0;
+  valor = valor.replaceAll('R\$', '').trim();
+  if (valor.contains(',') && valor.contains('.')) {
+    valor = valor.replaceAll('.', '').replaceAll(',', '.');
+  } else if (valor.contains(',')) {
+    valor = valor.replaceAll(',', '.');
+  }
+  return double.tryParse(valor) ?? 0.0;
+}
+
+DateTime obterMesContabil() {
+  DateTime hj = DateTime.now();
+  if (hj.day < 3) {
+    int mes = hj.month - 1;
+    int ano = hj.year;
+    if (mes == 0) {
+      mes = 12;
+      ano--;
+    }
+    return DateTime(ano, mes, 1);
+  }
+  return DateTime(hj.year, hj.month, 1);
+}
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp(
+    options: const FirebaseOptions(
+      apiKey: "AIzaSyAfxkBTSVglkIyLwvYYFY_pvQ5w5MGrTqU",
+      authDomain: "financascasal-32f8b.firebaseapp.com",
+      projectId: "financascasal-32f8b",
+      storageBucket: "financascasal-32f8b.firebasestorage.app",
+      messagingSenderId: "97129553247",
+      appId: "1:97129553247:web:81b296c33c718895bf2aea",
+    ),
+  );
+
+  await _injetarConfiguracoesIniciaisBanco();
+
+  final prefs = await SharedPreferences.getInstance();
+  final isDark = prefs.getBool('isDark') ?? true;
+  appThemeMode.value = isDark ? ThemeMode.dark : ThemeMode.light;
+  appTextScale.value = prefs.getDouble('textScale') ?? 1.0;
+
+  runApp(const MyApp());
+}
+
+Future<void> _injetarConfiguracoesIniciaisBanco() async {
+  try {
+    var dbUsuarios = FirebaseFirestore.instance.collection('usuarios');
+    var docEduardo = await dbUsuarios.doc('Eduardo').get();
+    if (!docEduardo.exists)
+      await dbUsuarios
+          .doc('Eduardo')
+          .set({'senha': 'ADMIN123', 'codigo': '711@2709'});
+    var docNaiub = await dbUsuarios.doc('Naiub').get();
+    if (!docNaiub.exists)
+      await dbUsuarios
+          .doc('Naiub')
+          .set({'senha': 'ADMIN123', 'codigo': '713@2105'});
+
+    // ⚙️ PASSO 3: Geração inicial das Categorias Padrão
+    var dbCats = FirebaseFirestore.instance.collection('categorias');
+    var catsGet = await dbCats.limit(1).get();
+    if (catsGet.docs.isEmpty) {
+      await dbCats.add({
+        'nome': 'Mercado',
+        'icone': Icons.shopping_cart.codePoint,
+        'cor': Colors.green.value,
+        'ativo': true
+      });
+      await dbCats.add({
+        'nome': 'Combustível',
+        'icone': Icons.local_gas_station.codePoint,
+        'cor': Colors.orange.value,
+        'ativo': true
+      });
+      await dbCats.add({
+        'nome': 'Lazer',
+        'icone': Icons.movie.codePoint,
+        'cor': Colors.purple.value,
+        'ativo': true
+      });
+      await dbCats.add({
+        'nome': 'Contas Fixas',
+        'icone': Icons.home.codePoint,
+        'cor': Colors.blue.value,
+        'ativo': true
+      });
+    }
+  } catch (e) {
+    debugPrint("Erro Init: $e");
+  }
+}
+
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<ThemeMode>(
+        valueListenable: appThemeMode,
+        builder: (context, themeMode, _) {
+          return ValueListenableBuilder<double>(
+              valueListenable: appTextScale,
+              builder: (context, textScale, _) {
+                return MaterialApp(
+                  title: 'DOUB Finanças',
+                  debugShowCheckedModeBanner: false,
+                  themeMode: themeMode,
+                  theme: ThemeData(
+                    colorScheme: ColorScheme.fromSeed(
+                        seedColor: Colors.green, brightness: Brightness.light),
+                    scaffoldBackgroundColor: Colors.green.shade50,
+                    appBarTheme: const AppBarTheme(
+                        backgroundColor: Colors.green,
+                        foregroundColor: Colors.white,
+                        elevation: 0),
+                    cardColor: Colors.white,
+                  ),
+                  darkTheme: ThemeData(
+                    colorScheme: ColorScheme.fromSeed(
+                        seedColor: Colors.green,
+                        brightness: Brightness.dark,
+                        surface: const Color(0xFF121212)),
+                    scaffoldBackgroundColor: const Color(0xFF121212),
+                    appBarTheme: const AppBarTheme(
+                        backgroundColor: Color(0xFF1A1A1A),
+                        foregroundColor: Colors.white,
+                        elevation: 0),
+                    cardColor: const Color(0xFF1E1E1E),
+                    bottomNavigationBarTheme:
+                        const BottomNavigationBarThemeData(
+                            backgroundColor: Color(0xFF1A1A1A),
+                            selectedItemColor: Colors.green,
+                            unselectedItemColor: Colors.white54),
+                  ),
+                  builder: (context, child) {
+                    return MediaQuery(
+                      data: MediaQuery.of(context)
+                          .copyWith(textScaler: TextScaler.linear(textScale)),
+                      child: child!,
+                    );
+                  },
+                  home: const TelaSplash(),
+                );
+              });
+        });
+  }
+}
+
+class TelaSplash extends StatefulWidget {
+  const TelaSplash({super.key});
+  @override
+  State<TelaSplash> createState() => _TelaSplashState();
+}
+
+class _TelaSplashState extends State<TelaSplash> {
+  bool _mostrarOub = false;
+  double _escala = 1.0;
+  double _opacidade = 1.0;
+
+  @override
+  void initState() {
+    super.initState();
+    _iniciarAnimacaoCinematografica();
+  }
+
+  void _iniciarAnimacaoCinematografica() async {
+    await Future.delayed(const Duration(milliseconds: 800));
+    if (mounted)
+      setState(() {
+        _mostrarOub = true;
+      });
+    await Future.delayed(const Duration(milliseconds: 2500));
+    if (mounted)
+      setState(() {
+        _escala = 5.0;
+        _opacidade = 0.0;
+      });
+    await Future.delayed(const Duration(milliseconds: 1200));
+    if (mounted)
+      Navigator.pushReplacement(
+          context, MaterialPageRoute(builder: (context) => const TelaLogin()));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    bool isDark = Theme.of(context).brightness == Brightness.dark;
+    return Scaffold(
+      backgroundColor: isDark ? const Color(0xFF121212) : Colors.green.shade50,
+      body: Center(
+        child: AnimatedOpacity(
+          duration: const Duration(milliseconds: 1200),
+          opacity: _opacidade,
+          curve: Curves.easeInOut,
+          child: AnimatedScale(
+            duration: const Duration(milliseconds: 1200),
+            scale: _escala,
+            curve: Curves.easeInOutCubic,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('D',
+                    style: TextStyle(
+                        fontSize: 70,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.green,
+                        letterSpacing: -2)),
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 1500),
+                  curve: Curves.easeOutQuart,
+                  width: _mostrarOub ? 145.0 : 0.0,
+                  child: ClipRect(
+                    child: OverflowBox(
+                      alignment: Alignment.centerLeft,
+                      maxWidth: 145.0,
+                      minWidth: 145.0,
+                      child: const Text('OUB',
+                          style: TextStyle(
+                              fontSize: 70,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.green),
+                          maxLines: 1,
+                          softWrap: false),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+void abrirConfiguracoes(BuildContext context) {
+  showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Row(children: [
+            Icon(Icons.settings, color: Colors.grey),
+            SizedBox(width: 10),
+            Expanded(
+                child: Text('Configurações', overflow: TextOverflow.ellipsis))
+          ]),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ValueListenableBuilder<ThemeMode>(
+                valueListenable: appThemeMode,
+                builder: (context, mode, _) {
+                  bool isDark = mode == ThemeMode.dark;
+                  return SwitchListTile(
+                      title: const Text('Modo Escuro'),
+                      secondary:
+                          Icon(isDark ? Icons.dark_mode : Icons.light_mode),
+                      value: isDark,
+                      onChanged: (bool valor) async {
+                        appThemeMode.value =
+                            valor ? ThemeMode.dark : ThemeMode.light;
+                        final prefs = await SharedPreferences.getInstance();
+                        prefs.setBool('isDark', valor);
+                      });
+                },
+              ),
+              const Divider(),
+              ValueListenableBuilder<double>(
+                  valueListenable: appTextScale,
+                  builder: (context, scale, _) {
+                    return DropdownButtonFormField<double>(
+                      value: scale,
+                      decoration: const InputDecoration(
+                          labelText: 'Tamanho da Fonte',
+                          prefixIcon: Icon(Icons.format_size)),
+                      items: const [
+                        DropdownMenuItem(value: 0.8, child: Text('Pequeno')),
+                        DropdownMenuItem(value: 1.0, child: Text('Normal')),
+                        DropdownMenuItem(value: 1.2, child: Text('Gigante'))
+                      ],
+                      onChanged: (double? valor) async {
+                        appTextScale.value = valor!;
+                        final prefs = await SharedPreferences.getInstance();
+                        prefs.setDouble('textScale', valor);
+                      },
+                    );
+                  }),
+            ],
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Fechar'))
+          ],
+        );
+      });
+}
+
+class TelaLogin extends StatelessWidget {
+  const TelaLogin({super.key});
+
+  void _abrirDialogSenha(BuildContext context, String usuario) {
+    final TextEditingController senhaController = TextEditingController();
+    bool senhaIncorreta = false;
+    bool mostrarSenha = false;
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(builder: (context, setStateDialog) {
+          void tentarLogin() async {
+            var doc = await FirebaseFirestore.instance
+                .collection('usuarios')
+                .doc(usuario)
+                .get();
+            if (doc.exists && doc.data()!['senha'] == senhaController.text) {
+              Navigator.pop(context);
+              Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(
+                      builder: (context) =>
+                          TelaNavegacao(usuarioLogado: usuario)));
+            } else {
+              setStateDialog(() {
+                senhaIncorreta = true;
+              });
+            }
+          }
+
+          void abrirRecuperacao() {
+            Navigator.pop(context);
+            _abrirDialogRecuperacao(context, usuario);
+          }
+
+          return AlertDialog(
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            title: Text('Olá, $usuario!', textAlign: TextAlign.center),
+            content: Column(mainAxisSize: MainAxisSize.min, children: [
+              const Text('Digite sua senha de acesso:',
+                  style: TextStyle(color: Colors.grey)),
+              const SizedBox(height: 15),
+              TextField(
+                  controller: senhaController,
+                  obscureText: !mostrarSenha,
+                  textInputAction: TextInputAction.done,
+                  onSubmitted: (valor) => tentarLogin(),
+                  decoration: InputDecoration(
+                      labelText: 'Senha',
+                      border: const OutlineInputBorder(),
+                      prefixIcon: const Icon(Icons.lock),
+                      suffixIcon: IconButton(
+                        icon: Icon(
+                            mostrarSenha
+                                ? Icons.visibility
+                                : Icons.visibility_off,
+                            color: Colors.grey),
+                        onPressed: () {
+                          setStateDialog(() {
+                            mostrarSenha = !mostrarSenha;
+                          });
+                        },
+                      ),
+                      errorText: senhaIncorreta ? 'Senha incorreta!' : null)),
+              const SizedBox(height: 10),
+              TextButton(
+                  onPressed: abrirRecuperacao,
+                  child: const Text('Esqueci ou Mudar Senha',
+                      style: TextStyle(fontSize: 12, color: Colors.blue)))
+            ]),
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Cancelar',
+                      style: TextStyle(color: Colors.grey))),
+              ElevatedButton(
+                  style:
+                      ElevatedButton.styleFrom(backgroundColor: Colors.green),
+                  onPressed: tentarLogin,
+                  child: const Text('Entrar',
+                      style: TextStyle(color: Colors.white)))
+            ],
+          );
+        });
+      },
+    );
+  }
+
+  void _abrirDialogRecuperacao(BuildContext context, String usuario) {
+    final TextEditingController codigoController = TextEditingController();
+    final TextEditingController novaSenhaController = TextEditingController();
+    bool codigoIncorreto = false;
+
+    showDialog(
+        context: context,
+        builder: (ctx) {
+          return StatefulBuilder(builder: (context, setStateDialog) {
+            void salvarNovaSenha() async {
+              var doc = await FirebaseFirestore.instance
+                  .collection('usuarios')
+                  .doc(usuario)
+                  .get();
+              if (doc.exists &&
+                  doc.data()!['codigo'] == codigoController.text &&
+                  novaSenhaController.text.isNotEmpty) {
+                await doc.reference.update({'senha': novaSenhaController.text});
+                Navigator.pop(ctx);
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                    content: Text('Senha alterada com sucesso!'),
+                    backgroundColor: Colors.green));
+              } else {
+                setStateDialog(() {
+                  codigoIncorreto = true;
+                });
+              }
+            }
+
+            return AlertDialog(
+              title: const Text('Mudar Senha'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('Digite seu código de segurança:',
+                      style: TextStyle(fontSize: 12, color: Colors.grey)),
+                  const SizedBox(height: 10),
+                  TextField(
+                      controller: codigoController,
+                      obscureText: true,
+                      decoration: InputDecoration(
+                          labelText: 'Código Secreto',
+                          errorText:
+                              codigoIncorreto ? 'Código inválido!' : null)),
+                  const SizedBox(height: 15),
+                  TextField(
+                      controller: novaSenhaController,
+                      decoration:
+                          const InputDecoration(labelText: 'Criar Nova Senha')),
+                ],
+              ),
+              actions: [
+                TextButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    child: const Text('Cancelar')),
+                ElevatedButton(
+                    style:
+                        ElevatedButton.styleFrom(backgroundColor: Colors.green),
+                    onPressed: salvarNovaSenha,
+                    child: const Text('Salvar',
+                        style: TextStyle(color: Colors.white)))
+              ],
+            );
+          });
+        });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    bool isDark = Theme.of(context).brightness == Brightness.dark;
+    return Scaffold(
+      backgroundColor: isDark ? const Color(0xFF121212) : Colors.green.shade50,
+      body: Center(
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.account_balance_wallet,
+                  size: 80, color: Colors.green),
+              const SizedBox(height: 10),
+              Stack(clipBehavior: Clip.none, children: [
+                const Text('DOUB',
+                    style: TextStyle(
+                        fontSize: 42,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.green,
+                        letterSpacing: 2)),
+                Positioned(
+                    bottom: -8,
+                    right: 0,
+                    child: const Text('2.0',
+                        style: TextStyle(
+                            color: Colors.green,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w900)))
+              ]),
+              const SizedBox(height: 50),
+              const Text('Quem está acessando?',
+                  style: TextStyle(fontSize: 16, color: Colors.grey)),
+              const SizedBox(height: 40),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  GestureDetector(
+                      onTap: () => _abrirDialogSenha(context, 'Eduardo'),
+                      child: Column(children: [
+                        CircleAvatar(
+                            radius: 50,
+                            backgroundColor: Colors.blue.shade100,
+                            child: const Icon(Icons.face,
+                                size: 50, color: Colors.blue)),
+                        const SizedBox(height: 10),
+                        const Text('Eduardo',
+                            style: TextStyle(
+                                fontSize: 18, fontWeight: FontWeight.bold))
+                      ])),
+                  const SizedBox(width: 40),
+                  GestureDetector(
+                      onTap: () => _abrirDialogSenha(context, 'Naiub'),
+                      child: Column(children: [
+                        CircleAvatar(
+                            radius: 50,
+                            backgroundColor: Colors.pink.shade100,
+                            child: const Icon(Icons.face_3,
+                                size: 50, color: Colors.pink)),
+                        const SizedBox(height: 10),
+                        const Text('Naiub',
+                            style: TextStyle(
+                                fontSize: 18, fontWeight: FontWeight.bold))
+                      ])),
+                ],
+              ),
+              const SizedBox(height: 50),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+void sairDoUsuario(BuildContext context) async {
+  Navigator.pushReplacement(
+      context, MaterialPageRoute(builder: (context) => const TelaSplash()));
+}
+
+class MenuLateral extends StatelessWidget {
+  final String usuarioLogado;
+  const MenuLateral({super.key, required this.usuarioLogado});
+
+  void _abrirNews(BuildContext context) {
+    showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+                title: const Text('DOUB News 📰'),
+                content: const Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Versão 2.0 (Passo 3) - Ago 2026',
+                        style: TextStyle(
+                            fontWeight: FontWeight.bold, color: Colors.green)),
+                    Divider(),
+                    Text('- Novo Resumo Triplo (Mensal, Diário, Anual).'),
+                    Text('- Sistema de Múltiplas Categorias e Ícones.'),
+                    Text('- Gráficos interativos (Clique no gráfico Diário).'),
+                    Text('- Cartão de crédito ajustado pro mês atual.'),
+                  ],
+                ),
+                actions: [
+                  TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('Fechar'))
+                ]));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Drawer(
+      child: Column(
+        children: [
+          UserAccountsDrawerHeader(
+              accountName: Text(usuarioLogado,
+                  style: const TextStyle(
+                      fontSize: 22, fontWeight: FontWeight.bold)),
+              accountEmail: const Text('Gestor Financeiro DOUB'),
+              decoration: BoxDecoration(color: Colors.green.shade700)),
+          ListTile(
+              leading: const Icon(Icons.newspaper, color: Colors.blue),
+              title: const Text('DOUB News'),
+              onTap: () {
+                Navigator.pop(context);
+                _abrirNews(context);
+              }),
+          const Spacer(),
+          const Divider(),
+          ListTile(
+              leading: const Icon(Icons.settings, color: Colors.grey),
+              title: const Text('Configurações'),
+              onTap: () {
+                Navigator.pop(context);
+                abrirConfiguracoes(context);
+              }),
+          ListTile(
+              leading: const Icon(Icons.logout, color: Colors.red),
+              title: const Text('Sair', style: TextStyle(color: Colors.red)),
+              onTap: () {
+                Navigator.pop(context);
+                sairDoUsuario(context);
+              }),
+          const SizedBox(height: 10),
+        ],
+      ),
+    );
+  }
+}
+
+class SeletorMes extends StatelessWidget {
+  final DateTime dataAtual;
+  final Function(int) aoMudar;
+  const SeletorMes({super.key, required this.dataAtual, required this.aoMudar});
+  @override
+  Widget build(BuildContext context) {
+    bool isDark = Theme.of(context).brightness == Brightness.dark;
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      color: isDark ? const Color(0xFF1A1A1A) : Colors.green.shade50,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          IconButton(
+              icon: const Icon(Icons.arrow_back_ios,
+                  size: 18, color: Colors.green),
+              onPressed: () => aoMudar(-1)),
+          const SizedBox(width: 10),
+          Text(
+              '${obterNomeMes(dataAtual.month).toUpperCase()} ${dataAtual.year}',
+              style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.green,
+                  letterSpacing: 1)),
+          const SizedBox(width: 10),
+          IconButton(
+              icon: const Icon(Icons.arrow_forward_ios,
+                  size: 18, color: Colors.green),
+              onPressed: () => aoMudar(1)),
+        ],
+      ),
+    );
+  }
+}
+
+// ⚙️ PASSO 3: GESTOR DE CATEGORIAS
+void _gerenciarCategorias(BuildContext context) {
+  showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) {
+        return Scaffold(
+            appBar: AppBar(title: const Text('Categorias'), actions: [
+              IconButton(
+                  icon: const Icon(Icons.add),
+                  onPressed: () => _novaCategoria(ctx))
+            ]),
+            body: StreamBuilder<QuerySnapshot>(
+                stream: FirebaseFirestore.instance
+                    .collection('categorias')
+                    .where('ativo', isEqualTo: true)
+                    .snapshots(),
+                builder: (c, s) {
+                  if (!s.hasData)
+                    return const Center(child: CircularProgressIndicator());
+                  return ListView(
+                      children: s.data!.docs.map((doc) {
+                    var d = doc.data() as Map<String, dynamic>;
+                    return ListTile(
+                        leading: Icon(
+                            IconData(d['icone'], fontFamily: 'MaterialIcons'),
+                            color: Color(d['cor'])),
+                        title: Text(d['nome']),
+                        trailing: IconButton(
+                            icon: const Icon(Icons.delete, color: Colors.red),
+                            onPressed: () =>
+                                doc.reference.update({'ativo': false})));
+                  }).toList());
+                }));
+      });
+}
+
+void _novaCategoria(BuildContext context) {
+  TextEditingController nomeCtrl = TextEditingController();
+  Color corSel = Colors.blue;
+  IconData iconeSel = Icons.category;
+  List<IconData> iconesOp = [
+    Icons.shopping_cart,
+    Icons.fastfood,
+    Icons.local_gas_station,
+    Icons.pets,
+    Icons.flight,
+    Icons.home,
+    Icons.movie,
+    Icons.directions_car,
+    Icons.health_and_safety
+  ];
+  List<Color> coresOp = [
+    Colors.red,
+    Colors.green,
+    Colors.blue,
+    Colors.orange,
+    Colors.purple,
+    Colors.teal,
+    Colors.pink,
+    Colors.brown
+  ];
+  showDialog(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(builder: (c, setS) {
+          return AlertDialog(
+              title: const Text('Nova Categoria'),
+              content: Column(mainAxisSize: MainAxisSize.min, children: [
+                TextField(
+                    controller: nomeCtrl,
+                    decoration: const InputDecoration(labelText: 'Nome')),
+                const SizedBox(height: 10),
+                Wrap(
+                    spacing: 5,
+                    children: coresOp
+                        .map((c) => GestureDetector(
+                            onTap: () => setS(() => corSel = c),
+                            child: CircleAvatar(
+                                backgroundColor: c,
+                                radius: 15,
+                                child: corSel == c
+                                    ? const Icon(Icons.check,
+                                        size: 15, color: Colors.white)
+                                    : null)))
+                        .toList()),
+                const SizedBox(height: 10),
+                Wrap(
+                    spacing: 5,
+                    children: iconesOp
+                        .map((i) => GestureDetector(
+                            onTap: () => setS(() => iconeSel = i),
+                            child: Icon(i,
+                                color: iconeSel == i ? corSel : Colors.grey,
+                                size: 30)))
+                        .toList())
+              ]),
+              actions: [
+                TextButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    child: const Text('Cancelar')),
+                ElevatedButton(
+                    onPressed: () {
+                      if (nomeCtrl.text.isNotEmpty) {
+                        FirebaseFirestore.instance
+                            .collection('categorias')
+                            .add({
+                          'nome': nomeCtrl.text,
+                          'icone': iconeSel.codePoint,
+                          'cor': corSel.value,
+                          'ativo': true
+                        });
+                        Navigator.pop(ctx);
+                      }
+                    },
+                    child: const Text('Salvar'))
+              ]);
+        });
+      });
+}
+
+class CategoriaSelector extends StatelessWidget {
+  final List<String> selecionadas;
+  final Function(List<String>) onChanged;
+  const CategoriaSelector(
+      {super.key, required this.selecionadas, required this.onChanged});
+  @override
+  Widget build(BuildContext context) {
+    bool isDark = Theme.of(context).brightness == Brightness.dark;
+    return StreamBuilder<QuerySnapshot>(
+        stream: FirebaseFirestore.instance
+            .collection('categorias')
+            .where('ativo', isEqualTo: true)
+            .snapshots(),
+        builder: (context, snap) {
+          if (!snap.hasData) return const SizedBox();
+          return SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: snap.data!.docs.map((doc) {
+                var d = doc.data() as Map<String, dynamic>;
+                bool isSel = selecionadas.contains(doc.id);
+                return Padding(
+                    padding: const EdgeInsets.only(right: 8.0),
+                    child: FilterChip(
+                        label: Row(mainAxisSize: MainAxisSize.min, children: [
+                          Icon(
+                              IconData(d['icone'], fontFamily: 'MaterialIcons'),
+                              size: 16,
+                              color: isSel ? Colors.white : Color(d['cor'])),
+                          const SizedBox(width: 5),
+                          Text(d['nome'],
+                              style: TextStyle(
+                                  color: isSel
+                                      ? Colors.white
+                                      : (isDark
+                                          ? Colors.white70
+                                          : Colors.black)))
+                        ]),
+                        selected: isSel,
+                        selectedColor: Color(d['cor']),
+                        checkmarkColor: Colors.white,
+                        onSelected: (b) {
+                          List<String> l = List.from(selecionadas);
+                          if (b)
+                            l.add(doc.id);
+                          else
+                            l.remove(doc.id);
+                          onChanged(l);
+                        }));
+              }).toList(),
+            ),
+          );
+        });
+  }
+}
+
+class TelaNavegacao extends StatefulWidget {
+  final String usuarioLogado;
+  const TelaNavegacao({super.key, required this.usuarioLogado});
+  @override
+  State<TelaNavegacao> createState() => _TelaNavegacaoState();
+}
+
+class _TelaNavegacaoState extends State<TelaNavegacao> {
+  int _indiceAtual = 0;
+  DateTime _dataSelecionada = obterMesContabil();
+
+  @override
+  void initState() {
+    super.initState();
+    _realizarManutencaoMensal();
+  }
+
+  void _realizarManutencaoMensal() async {
+    DateTime agora = DateTime.now();
+    DateTime limitePassado = DateTime(agora.year - 1, agora.month, 1);
+    DateTime limiteFuturo = DateTime(agora.year + 1, agora.month, 1);
+    try {
+      var batch = FirebaseFirestore.instance.batch();
+      var antigos = await FirebaseFirestore.instance
+          .collection('lancamentos')
+          .where('data', isLessThan: Timestamp.fromDate(limitePassado))
+          .get();
+      for (var doc in antigos.docs) {
+        var dados = doc.data();
+        if (dados['isPoupanca'] != true) {
+          batch.delete(doc.reference);
+        }
+      }
+      var fixas = await FirebaseFirestore.instance
+          .collection('lancamentos')
+          .where('isContaFixa', isEqualTo: true)
+          .get();
+      Map<String, DocumentSnapshot> ultimaDeCadaGrupo = {};
+      for (var doc in fixas.docs) {
+        var dados = doc.data();
+        String gId = dados['grupoId'] ?? '';
+        if (gId.isNotEmpty) {
+          if (!ultimaDeCadaGrupo.containsKey(gId)) {
+            ultimaDeCadaGrupo[gId] = doc;
+          } else {
+            DateTime dtAtual = (dados['data'] as Timestamp).toDate();
+            DateTime dtSalva =
+                (ultimaDeCadaGrupo[gId]!.data() as Map)['data'].toDate();
+            if (dtAtual.isAfter(dtSalva)) {
+              ultimaDeCadaGrupo[gId] = doc;
+            }
+          }
+        }
+      }
+      for (var doc in ultimaDeCadaGrupo.values) {
+        var dados = doc.data() as Map<String, dynamic>;
+        DateTime ultimaData = (dados['data'] as Timestamp).toDate();
+        if (ultimaData.isBefore(limiteFuturo)) {
+          int mesesFaltantes = limiteFuturo.month -
+              ultimaData.month +
+              12 * (limiteFuturo.year - ultimaData.year);
+          for (int i = 1; i <= mesesFaltantes; i++) {
+            var novaData = DateTime(ultimaData.year, ultimaData.month + i,
+                ultimaData.day, ultimaData.hour, ultimaData.minute);
+            var ref =
+                FirebaseFirestore.instance.collection('lancamentos').doc();
+            batch.set(ref, {
+              'descricao': dados['descricao'],
+              'valor': dados['valor'],
+              'responsavel': dados['responsavel'],
+              'data': Timestamp.fromDate(novaData),
+              'isCartao': dados['isCartao'] ?? false,
+              'isPoupanca': dados['isPoupanca'] ?? false,
+              'poupancaConfirmada': false,
+              'isContaFixa': true,
+              'grupoId': dados['grupoId'],
+              'categorias': dados['categorias'] ?? []
+            });
+          }
+        }
+      }
+      await batch.commit();
+    } catch (e) {
+      debugPrint("Erro na manutenção: $e");
+    }
+  }
+
+  void _mudarMes(int incremento) {
+    setState(() {
+      _dataSelecionada = DateTime(
+          _dataSelecionada.year, _dataSelecionada.month + incremento, 1);
+    });
+  }
+
+  void _mudarParaMesEspecifico(DateTime data) {
+    setState(() {
+      _dataSelecionada = data;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    DateTime hj = DateTime.now();
+    String diaTopo =
+        "${hj.day.toString().padLeft(2, '0')}/${hj.month.toString().padLeft(2, '0')}";
+
+    final List<Widget> telas = [
+      TelaVisaoGeralTripla(
+          mesAno: _dataSelecionada,
+          aoMudarMes: _mudarMes,
+          aoMudarMesEspecifico: _mudarParaMesEspecifico),
+      TelaLancamentos(
+          mesAno: _dataSelecionada,
+          aoMudarMes: _mudarMes,
+          usuarioLogado: widget.usuarioLogado),
+      TelaCartoes(
+          mesAno: _dataSelecionada,
+          aoMudarMes: _mudarMes,
+          usuarioLogado: widget.usuarioLogado),
+      TelaPoupanca(
+          mesAno: _dataSelecionada,
+          aoMudarMes: _mudarMes,
+          usuarioLogado: widget.usuarioLogado),
+    ];
+    return Scaffold(
+      drawer: MenuLateral(usuarioLogado: widget.usuarioLogado),
+      appBar: AppBar(
+        title: Text(['Resumo', 'Contas', 'Cartões', 'Poupança'][_indiceAtual]),
+        centerTitle: true,
+        leadingWidth: 80,
+        leading: Builder(
+            builder: (ctx) => InkWell(
+                onTap: () => Scaffold.of(ctx).openDrawer(),
+                child: const Center(
+                    child: Text('DOUB',
+                        style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 1.2,
+                            color: Colors.white))))),
+        actions: [
+          Center(
+              child: Padding(
+                  padding: const EdgeInsets.only(right: 16.0),
+                  child: Text(diaTopo,
+                      style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white70))))
+        ],
+      ),
+      body: telas[_indiceAtual],
+      bottomNavigationBar: BottomNavigationBar(
+        type: BottomNavigationBarType.fixed,
+        currentIndex: _indiceAtual,
+        onTap: (indice) {
+          setState(() {
+            _indiceAtual = indice;
+          });
+        },
+        items: const [
+          BottomNavigationBarItem(icon: Icon(Icons.dashboard), label: 'Resumo'),
+          BottomNavigationBarItem(
+              icon: Icon(Icons.account_balance), label: 'Contas'),
+          BottomNavigationBarItem(
+              icon: Icon(Icons.credit_card), label: 'Cartões'),
+          BottomNavigationBarItem(icon: Icon(Icons.savings), label: 'Poupança')
+        ],
+      ),
+    );
+  }
+}
+
+// ⚙️ PASSO 3: O NOVO DASHBOARD TRIPLO
+class TelaVisaoGeralTripla extends StatefulWidget {
+  final DateTime mesAno;
+  final Function(int) aoMudarMes;
+  final Function(DateTime) aoMudarMesEspecifico;
+  const TelaVisaoGeralTripla(
+      {super.key,
+      required this.mesAno,
+      required this.aoMudarMes,
+      required this.aoMudarMesEspecifico});
+  @override
+  State<TelaVisaoGeralTripla> createState() => _TelaVisaoGeralTriplaState();
+}
+
+class _TelaVisaoGeralTriplaState extends State<TelaVisaoGeralTripla>
+    with SingleTickerProviderStateMixin {
+  late TabController _tabController;
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 3, vsync: this);
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
+
+  void _irParaMes(DateTime data) {
+    widget.aoMudarMesEspecifico(data);
+    _tabController.animateTo(0);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(children: [
+      SeletorMes(dataAtual: widget.mesAno, aoMudar: widget.aoMudarMes),
+      TabBar(
+          controller: _tabController,
+          labelColor: Colors.green,
+          unselectedLabelColor: Colors.grey,
+          indicatorColor: Colors.green,
+          tabs: const [
+            Tab(text: 'Mensal'),
+            Tab(text: 'Diário'),
+            Tab(text: 'Anual')
+          ]),
+      Expanded(
+          child: TabBarView(controller: _tabController, children: [
+        _TabMensal(mesAno: widget.mesAno),
+        _TabDiario(mesAno: widget.mesAno),
+        _TabAnual(ano: widget.mesAno.year, aoClicarMes: _irParaMes),
+      ]))
+    ]);
+  }
+}
+
+class _TabMensal extends StatelessWidget {
+  final DateTime mesAno;
+  const _TabMensal({required this.mesAno});
+  @override
+  Widget build(BuildContext context) {
+    bool isDark = Theme.of(context).brightness == Brightness.dark;
+    DateTime inicio = DateTime(mesAno.year, mesAno.month, 1);
+    DateTime fim = DateTime(mesAno.year, mesAno.month + 1, 1);
+
+    return StreamBuilder<QuerySnapshot>(
+        stream: FirebaseFirestore.instance
+            .collection('lancamentos')
+            .where('data', isGreaterThanOrEqualTo: Timestamp.fromDate(inicio))
+            .where('data', isLessThan: Timestamp.fromDate(fim))
+            .snapshots(),
+        builder: (context, snapshot) {
+          if (!snapshot.hasData)
+            return const Center(child: CircularProgressIndicator());
+          double renda = 0, despesa = 0, poup = 0;
+
+          for (var doc in snapshot.data!.docs) {
+            var d = doc.data() as Map<String, dynamic>;
+            double v = (d['valor'] ?? 0.0).toDouble();
+            if (d['isCartao'] == true) {
+              double vGast = v < 0 ? v * -1 : v;
+              despesa += vGast;
+            } else if (d['isDepositoDireto'] != true) {
+              if (v >= 0)
+                renda += v;
+              else {
+                double abs = v * -1;
+                if (d['isPoupanca'] == true)
+                  poup += abs;
+                else
+                  despesa += abs;
+              }
+            }
+          }
+          return ListView(padding: const EdgeInsets.all(16), children: [
+            Card(
+                elevation: 6,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(15)),
+                child: Padding(
+                    padding: const EdgeInsets.all(20),
+                    child: Column(children: [
+                      Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text('Renda Total',
+                                style: TextStyle(
+                                    fontSize: 16, color: Colors.grey)),
+                            Text(
+                                'R\$ ${renda.toStringAsFixed(2).replaceAll('.', ',')}',
+                                style: const TextStyle(
+                                    color: Colors.green,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16))
+                          ]),
+                      const SizedBox(height: 10),
+                      Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text('Despesas Totais',
+                                style: TextStyle(
+                                    fontSize: 16, color: Colors.grey)),
+                            Text(
+                                'R\$ ${despesa.toStringAsFixed(2).replaceAll('.', ',')}',
+                                style: const TextStyle(
+                                    color: Colors.red,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16))
+                          ]),
+                      const SizedBox(height: 10),
+                      // Poupança agora abaixo
+                      Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text('Destinado à Poupança',
+                                style: TextStyle(
+                                    fontSize: 16, color: Colors.grey)),
+                            Text(
+                                'R\$ ${poup.toStringAsFixed(2).replaceAll('.', ',')}',
+                                style: const TextStyle(
+                                    color: Colors.blue,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16))
+                          ]),
+                      const Divider(height: 25, thickness: 1.5),
+                      Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text('Sobra do Mês',
+                                style: TextStyle(
+                                    fontSize: 18, fontWeight: FontWeight.bold)),
+                            Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 12, vertical: 6),
+                                decoration: BoxDecoration(
+                                    color: isDark
+                                        ? Colors.blue.shade900
+                                        : Colors.lightBlue,
+                                    borderRadius: BorderRadius.circular(10)),
+                                child: Text(
+                                    'R\$ ${(renda - despesa - poup).toStringAsFixed(2).replaceAll('.', ',')}',
+                                    style: const TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 18)))
+                          ])
+                    ]))),
+            const SizedBox(height: 20),
+            ElevatedButton.icon(
+                style:
+                    ElevatedButton.styleFrom(backgroundColor: Colors.blueGrey),
+                icon: const Icon(Icons.settings_applications,
+                    color: Colors.white),
+                label: const Text('Gerenciar Categorias',
+                    style: TextStyle(color: Colors.white)),
+                onPressed: () => _gerenciarCategorias(context))
+          ]);
+        });
+  }
+}
+
+class _TabDiario extends StatefulWidget {
+  final DateTime mesAno;
+  const _TabDiario({required this.mesAno});
+  @override
+  State<_TabDiario> createState() => _TabDiarioState();
+}
+
+class _TabDiarioState extends State<_TabDiario> {
+  int _semanaSelecionada = _getSemanaDoMes(DateTime.now());
+
+  static int _getSemanaDoMes(DateTime date) {
+    int day = date.day;
+    int firstWeekday = DateTime(date.year, date.month, 1).weekday;
+    return ((day + firstWeekday - 2) / 7).floor() + 1;
+  }
+
+  void _mostrarDetalhesDia(BuildContext context, String diaNome,
+      List<Map<String, dynamic>> lancamentos) {
+    if (lancamentos.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Nenhum lançamento neste dia.')));
+      return;
+    }
+    showModalBottomSheet(
+        context: context,
+        builder: (ctx) => Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Detalhes de $diaNome',
+                      style: const TextStyle(
+                          fontSize: 18, fontWeight: FontWeight.bold)),
+                  const Divider(),
+                  ...lancamentos.map((d) => ListTile(
+                      title: Text(d['descricao'] ?? 'Sem nome'),
+                      trailing: Text(
+                          'R\$ ${((d['valor'] ?? 0.0) < 0 ? (d['valor'] * -1) : d['valor']).toStringAsFixed(2).replaceAll('.', ',')}',
+                          style: TextStyle(
+                              color: (d['valor'] ?? 0.0) >= 0
+                                  ? Colors.green
+                                  : Colors.red,
+                              fontWeight: FontWeight.bold))))
+                ])));
+  }
+
+  // Descobre todas as datas reais (Seg a Dom) de uma determinada semana do mês
+  Map<int, DateTime> _obterDiasDaSemana(int ano, int mes, int semanaAlvo) {
+    Map<int, DateTime> diasDaSemana = {};
+    DateTime primeiroDiaMes = DateTime(ano, mes, 1);
+
+    // Varre todos os dias do mês para achar os que pertencem à semana selecionada
+    for (int d = 1; d <= 31; d++) {
+      DateTime dt = DateTime(ano, mes, d);
+      if (dt.month != mes) break; // Passou do mês
+      if (_getSemanaDoMes(dt) == semanaAlvo) {
+        diasDaSemana[dt.weekday] = dt; // dt.weekday: 1=Seg, ..., 7=Dom
+      }
+    }
+    return diasDaSemana;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    DateTime inicio = DateTime(widget.mesAno.year, widget.mesAno.month, 1);
+    DateTime fim = DateTime(widget.mesAno.year, widget.mesAno.month + 1, 1);
+
+    // Busca Categorias e Lançamentos simultaneamente
+    return FutureBuilder<QuerySnapshot>(
+        future: FirebaseFirestore.instance.collection('categorias').get(),
+        builder: (context, snapCats) {
+          if (!snapCats.hasData)
+            return const Center(child: CircularProgressIndicator());
+
+          // Mapeia ID da Categoria -> Cor exata
+          Map<String, Color> coresCategorias = {};
+          for (var doc in snapCats.data!.docs) {
+            var d = doc.data() as Map<String, dynamic>;
+            coresCategorias[doc.id] = Color(d['cor'] ?? Colors.white.value);
+          }
+
+          return StreamBuilder<QuerySnapshot>(
+              stream: FirebaseFirestore.instance
+                  .collection('lancamentos')
+                  .where('data',
+                      isGreaterThanOrEqualTo: Timestamp.fromDate(inicio))
+                  .where('data', isLessThan: Timestamp.fromDate(fim))
+                  .snapshots(),
+              builder: (context, snapshot) {
+                if (!snapshot.hasData)
+                  return const Center(child: CircularProgressIndicator());
+
+                Map<int, List<Map<String, dynamic>>> dadosDiarios = {
+                  1: [],
+                  2: [],
+                  3: [],
+                  4: [],
+                  5: [],
+                  6: [],
+                  7: []
+                };
+                Map<int, List<Map<String, dynamic>>> detalhesDia = {
+                  1: [],
+                  2: [],
+                  3: [],
+                  4: [],
+                  5: [],
+                  6: [],
+                  7: []
+                };
+
+                Map<int, DateTime> diasDestaSemana = _obterDiasDaSemana(
+                    widget.mesAno.year,
+                    widget.mesAno.month,
+                    _semanaSelecionada);
+
+                for (var doc in snapshot.data!.docs) {
+                  var d = doc.data() as Map<String, dynamic>;
+                  double v = (d['valor'] ?? 0.0).toDouble();
+                  DateTime dt = (d['data'] as Timestamp).toDate();
+
+                  if (_getSemanaDoMes(dt) != _semanaSelecionada) continue;
+
+                  double abs = v < 0 ? v * -1 : v;
+                  Color cor = Colors.white; // 'Outro' padrão (branco)
+
+                  if (v >= 0) {
+                    cor = Colors.green;
+                  } else if (d['isPoupanca'] == true) {
+                    cor = Colors.blue;
+                  } else {
+                    var cats = d['categorias'] ?? [];
+                    if (cats.isNotEmpty &&
+                        coresCategorias.containsKey(cats[0].toString())) {
+                      cor = coresCategorias[cats[0]
+                          .toString()]!; // Cor exata cadastrada por você!
+                    } else {
+                      cor = Colors
+                          .white; // Sem categoria definida -> Outro (Branco)
+                    }
+                  }
+
+                  dadosDiarios[dt.weekday]!.add({'v': abs, 'cor': cor});
+                  detalhesDia[dt.weekday]!.add(d);
+                }
+
+                const dias = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'];
+
+                return Column(children: [
+                  Container(
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      color: Theme.of(context).brightness == Brightness.dark
+                          ? const Color(0xFF1A1A1A)
+                          : Colors.green.shade50,
+                      child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            IconButton(
+                                icon: const Icon(Icons.arrow_back_ios,
+                                    size: 16, color: Colors.green),
+                                onPressed: () => setState(() =>
+                                    _semanaSelecionada =
+                                        (_semanaSelecionada > 1)
+                                            ? _semanaSelecionada - 1
+                                            : 1)),
+                            const SizedBox(width: 10),
+                            Text('SEMANA $_semanaSelecionada',
+                                style: const TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.green,
+                                    letterSpacing: 1)),
+                            const SizedBox(width: 10),
+                            IconButton(
+                                icon: const Icon(Icons.arrow_forward_ios,
+                                    size: 16, color: Colors.green),
+                                onPressed: () => setState(() =>
+                                    _semanaSelecionada =
+                                        (_semanaSelecionada < 5)
+                                            ? _semanaSelecionada + 1
+                                            : 5)),
+                          ])),
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: List.generate(7, (i) {
+                            int diaIdx = i + 1;
+                            List<Map<String, dynamic>> segmentos =
+                                dadosDiarios[diaIdx]!;
+                            double totalDia = segmentos.fold(
+                                0, (sum, item) => sum + item['v']);
+                            DateTime? dtDia = diasDestaSemana[diaIdx];
+                            String labelData = dtDia != null
+                                ? "${dtDia.day.toString().padLeft(2, '0')}/${dtDia.month.toString().padLeft(2, '0')}"
+                                : "";
+
+                            return Expanded(
+                              child: GestureDetector(
+                                onTap: () => _mostrarDetalhesDia(
+                                    context,
+                                    '${dias[i]} ($labelData)',
+                                    detalhesDia[diaIdx]!),
+                                child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.end,
+                                    children: [
+                                      Text(
+                                          totalDia > 0
+                                              ? totalDia.toStringAsFixed(0)
+                                              : '',
+                                          style: const TextStyle(
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.bold)),
+                                      const SizedBox(height: 5),
+                                      Expanded(
+                                        child: Container(
+                                          width: 30,
+                                          decoration: BoxDecoration(
+                                              color: Colors.black26,
+                                              borderRadius:
+                                                  BorderRadius.circular(6)),
+                                          child: Column(
+                                              mainAxisAlignment:
+                                                  MainAxisAlignment.end,
+                                              children: segmentos.map((seg) {
+                                                double alturaSeg = totalDia > 0
+                                                    ? (seg['v'] / totalDia) *
+                                                        180
+                                                    : 0;
+                                                return Container(
+                                                    height: alturaSeg < 2
+                                                        ? 2
+                                                        : alturaSeg,
+                                                    width: 30,
+                                                    decoration: BoxDecoration(
+                                                        color: seg['cor'],
+                                                        borderRadius:
+                                                            BorderRadius
+                                                                .circular(2)));
+                                              }).toList()),
+                                        ),
+                                      ),
+                                      const SizedBox(height: 10),
+                                      Text(dias[i],
+                                          style: const TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 12)),
+                                      Text(labelData,
+                                          style: const TextStyle(
+                                              fontSize: 10,
+                                              color: Colors.grey,
+                                              fontWeight: FontWeight.w600))
+                                    ]),
+                              ),
+                            );
+                          })),
+                    ),
+                  ),
+                ]);
+              });
+        });
+  }
+}
+
+class _TabAnual extends StatelessWidget {
+  final int ano;
+  final Function(DateTime) aoClicarMes;
+  const _TabAnual({required this.ano, required this.aoClicarMes});
+  @override
+  Widget build(BuildContext context) {
+    DateTime inicio = DateTime(ano, 1, 1);
+    DateTime fim = DateTime(ano + 1, 1, 1);
+    return StreamBuilder<QuerySnapshot>(
+        stream: FirebaseFirestore.instance
+            .collection('lancamentos')
+            .where('data', isGreaterThanOrEqualTo: Timestamp.fromDate(inicio))
+            .where('data', isLessThan: Timestamp.fromDate(fim))
+            .snapshots(),
+        builder: (context, snapshot) {
+          if (!snapshot.hasData)
+            return const Center(child: CircularProgressIndicator());
+          double totalAno = 0;
+          Map<int, double> saldoMes = {};
+          for (int i = 1; i <= 12; i++) saldoMes[i] = 0;
+          for (var doc in snapshot.data!.docs) {
+            var d = doc.data() as Map<String, dynamic>;
+            DateTime dt = (d['data'] as Timestamp).toDate();
+            if (d['isPoupanca'] != true && d['isDepositoDireto'] != true) {
+              double v = (d['valor'] ?? 0.0).toDouble();
+              if (d['isCartao'] == true && v > 0) v = v * -1;
+              saldoMes[dt.month] = saldoMes[dt.month]! + v;
+              totalAno += v;
+            }
+          }
+          return ListView(padding: const EdgeInsets.all(16), children: [
+            Text('Balanço Anual $ano',
+                style:
+                    const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 5),
+            Text(
+                'Resultado Geral: R\$ ${totalAno.toStringAsFixed(2).replaceAll('.', ',')}',
+                style: TextStyle(
+                    fontSize: 18,
+                    color: totalAno >= 0 ? Colors.green : Colors.red,
+                    fontWeight: FontWeight.bold)),
+            const Divider(height: 30),
+            ...List.generate(12, (i) {
+              int m = i + 1;
+              return Card(
+                  margin: const EdgeInsets.symmetric(vertical: 4),
+                  child: ListTile(
+                      title: Text(obterNomeMes(m),
+                          style: const TextStyle(fontWeight: FontWeight.bold)),
+                      trailing: Text(
+                          'R\$ ${saldoMes[m]!.toStringAsFixed(2).replaceAll('.', ',')}',
+                          style: TextStyle(
+                              color:
+                                  saldoMes[m]! >= 0 ? Colors.green : Colors.red,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16)),
+                      onTap: () => aoClicarMes(DateTime(ano, m, 1))));
+            })
+          ]);
+        });
+  }
+}
+
+// ===============================================
+// TELAS DE CONTA, CARTÃO E POUPANÇA (ATUALIZADAS COM CATEGORIAS)
+// ===============================================
+
+class TelaLancamentos extends StatelessWidget {
+  final DateTime mesAno;
+  final Function(int) aoMudarMes;
+  final String usuarioLogado;
+
+  const TelaLancamentos(
+      {super.key,
+      required this.mesAno,
+      required this.aoMudarMes,
+      required this.usuarioLogado});
+
+  void _abrirFormulario(BuildContext context) {
+    final TextEditingController descricaoController = TextEditingController();
+    final TextEditingController valorController = TextEditingController();
+    final TextEditingController dataRealController = TextEditingController(
+        text:
+            "${DateTime.now().day.toString().padLeft(2, '0')}/${DateTime.now().month.toString().padLeft(2, '0')}/${DateTime.now().year}");
+    bool isDespesa = true, isRecorrente = false, isPoupanca = false;
+    List<String> catsSel = []; // ⚙️ CATEGORIAS
+
+    showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+        builder: (BuildContext context) {
+          return StatefulBuilder(
+              builder: (BuildContext context, StateSetter setStateBottomSheet) {
+            return Padding(
+              padding: EdgeInsets.only(
+                  bottom: MediaQuery.of(context).viewInsets.bottom,
+                  left: 20,
+                  right: 20,
+                  top: 20),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                      Icon(Icons.person,
+                          color: Colors.green.shade700, size: 20),
+                      const SizedBox(width: 5),
+                      Text('Lançando como: $usuarioLogado',
+                          style: TextStyle(
+                              color: Colors.green.shade700,
+                              fontWeight: FontWeight.bold))
+                    ]),
+                    const SizedBox(height: 10),
+                    Text('Conta de ${obterNomeMes(mesAno.month)}',
+                        style: const TextStyle(
+                            fontSize: 20, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 15),
+                    Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                      ChoiceChip(
+                          label: const Text('Despesa (-)'),
+                          selectedColor: Colors.red,
+                          labelStyle: TextStyle(
+                              color: isDespesa ? Colors.white : Colors.black),
+                          selected: isDespesa,
+                          onSelected: (val) {
+                            setStateBottomSheet(() {
+                              isDespesa = true;
+                            });
+                          }),
+                      const SizedBox(width: 10),
+                      ChoiceChip(
+                          label: const Text('Renda (+)'),
+                          selectedColor: Colors.green,
+                          labelStyle: TextStyle(
+                              color: !isDespesa ? Colors.white : Colors.black),
+                          selected: !isDespesa,
+                          onSelected: (val) {
+                            setStateBottomSheet(() {
+                              isDespesa = false;
+                              isPoupanca = false;
+                              descricaoController.clear();
+                            });
+                          })
+                    ]),
+                    const SizedBox(height: 15),
+                    TextField(
+                        controller: descricaoController,
+                        enabled: !isPoupanca,
+                        decoration: const InputDecoration(
+                            labelText: 'Descrição',
+                            border: OutlineInputBorder(),
+                            prefixIcon: Icon(Icons.edit))),
+                    const SizedBox(height: 15),
+                    TextField(
+                        controller: valorController,
+                        keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true),
+                        decoration: const InputDecoration(
+                            labelText: 'Valor (R\$)',
+                            border: OutlineInputBorder(),
+                            prefixIcon: Icon(Icons.attach_money))),
+                    const SizedBox(height: 15),
+                    TextField(
+                        controller: dataRealController,
+                        decoration: const InputDecoration(
+                            labelText: 'Data Real do Acontecimento',
+                            helperText:
+                                'Só para controle. Cai no mês selecionado.',
+                            border: OutlineInputBorder(),
+                            prefixIcon: Icon(Icons.calendar_today))),
+
+                    if (isDespesa)
+                      CategoriaSelector(
+                          selecionadas: catsSel,
+                          onChanged: (l) => setStateBottomSheet(
+                              () => catsSel = l)), // ⚙️ ADD CATEGORIAS
+                    if (isDespesa)
+                      SwitchListTile(
+                          title: const Text('Destinar à Poupança?',
+                              style: TextStyle(
+                                  color: Colors.blue,
+                                  fontWeight: FontWeight.bold)),
+                          subtitle:
+                              const Text('Isso aparecerá na Aba do Cofrinho'),
+                          value: isPoupanca,
+                          activeColor: Colors.blue,
+                          secondary:
+                              const Icon(Icons.savings, color: Colors.blue),
+                          onChanged: (bool valor) {
+                            setStateBottomSheet(() {
+                              isPoupanca = valor;
+                              if (isPoupanca) {
+                                descricaoController.text = 'Poupança';
+                              } else {
+                                descricaoController.clear();
+                              }
+                            });
+                          }),
+                    SwitchListTile(
+                        title: const Text('Conta Fixa?'),
+                        subtitle: const Text('Repete automaticamente'),
+                        value: isRecorrente,
+                        activeColor: Colors.green,
+                        onChanged: (bool valor) {
+                          setStateBottomSheet(() {
+                            isRecorrente = valor;
+                          });
+                        }),
+                    const SizedBox(height: 20),
+                    SizedBox(
+                        width: double.infinity,
+                        height: 50,
+                        child: ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                                backgroundColor: isPoupanca
+                                    ? Colors.blue
+                                    : (isDespesa ? Colors.red : Colors.green)),
+                            onPressed: () {
+                              if (descricaoController.text.isNotEmpty &&
+                                  valorController.text.isNotEmpty) {
+                                double vDigitado =
+                                    parseMoeda(valorController.text);
+                                if (isDespesa && vDigitado > 0)
+                                  vDigitado = vDigitado * -1;
+                                else if (!isDespesa && vDigitado < 0)
+                                  vDigitado = vDigitado * -1;
+                                DateTime agora = DateTime.now();
+                                int vezes = isRecorrente ? 12 : 1;
+                                String? gId = isRecorrente
+                                    ? agora.millisecondsSinceEpoch.toString()
+                                    : null;
+                                for (int i = 0; i < vezes; i++) {
+                                  FirebaseFirestore.instance
+                                      .collection('lancamentos')
+                                      .add({
+                                        'descricao': descricaoController.text,
+                                        'valor': vDigitado,
+                                        'responsavel': usuarioLogado,
+                                        'dataRealString':
+                                            dataRealController.text,
+                                        'data': Timestamp.fromDate(DateTime(
+                                            mesAno.year,
+                                            mesAno.month + i,
+                                            agora.day,
+                                            agora.hour,
+                                            agora.minute,
+                                            agora.second,
+                                            agora.millisecond)),
+                                        'isCartao': false,
+                                        'isPoupanca': isPoupanca,
+                                        'poupancaConfirmada': false,
+                                        'isContaFixa': isRecorrente,
+                                        'categorias': catsSel
+                                      }..addAll(
+                                          gId != null ? {'grupoId': gId} : {}));
+                                }
+                                Navigator.pop(context);
+                              } else {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                        content: Text(
+                                            'Preencha a descrição e o valor!',
+                                            style:
+                                                TextStyle(color: Colors.white)),
+                                        backgroundColor: Colors.red));
+                              }
+                            },
+                            child: Text(
+                                isPoupanca
+                                    ? 'Salvar na Poupança'
+                                    : 'Salvar Conta',
+                                style: const TextStyle(
+                                    fontSize: 16, color: Colors.white)))),
+                    const SizedBox(height: 20),
+                  ],
+                ),
+              ),
+            );
+          });
+        });
+  }
+
+  void _abrirFormularioEdicao(BuildContext context, DocumentSnapshot doc) {
+    final dados = doc.data() as Map<String, dynamic>;
+    final double valorAtual = (dados['valor'] ?? 0.0).toDouble();
+    final temGrupo = dados['grupoId'] != null;
+
+    final TextEditingController descricaoController =
+        TextEditingController(text: dados['descricao']);
+    final TextEditingController valorController = TextEditingController(
+        text: (valorAtual < 0 ? valorAtual * -1 : valorAtual)
+            .toStringAsFixed(2)
+            .replaceAll('.', ','));
+    final TextEditingController dataRealController = TextEditingController(
+        text: dados['dataRealString'] ??
+            "${DateTime.now().day.toString().padLeft(2, '0')}/${DateTime.now().month.toString().padLeft(2, '0')}/${DateTime.now().year}");
+    bool isDespesa = valorAtual < 0;
+    bool isPoupanca = dados['isPoupanca'] ?? false;
+    String responsavelOriginal = dados['responsavel'] ?? usuarioLogado;
+    String descricaoAntiga = descricaoController.text;
+    List<String> catsSel =
+        List<String>.from(dados['categorias'] ?? []); // ⚙️ LÊ CATEGORIAS SALVAS
+
+    showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+        builder: (BuildContext context) {
+          return StatefulBuilder(
+              builder: (BuildContext context, StateSetter setStateBottomSheet) {
+            return Padding(
+              padding: EdgeInsets.only(
+                  bottom: MediaQuery.of(context).viewInsets.bottom,
+                  left: 20,
+                  right: 20,
+                  top: 20),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text('Editar Conta',
+                        style: TextStyle(
+                            fontSize: 20, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 15),
+                    Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                      ChoiceChip(
+                          label: const Text('Despesa (-)'),
+                          selectedColor: Colors.red,
+                          labelStyle: TextStyle(
+                              color: isDespesa ? Colors.white : Colors.black),
+                          selected: isDespesa,
+                          onSelected: (val) {
+                            setStateBottomSheet(() {
+                              isDespesa = true;
+                            });
+                          }),
+                      const SizedBox(width: 10),
+                      ChoiceChip(
+                          label: const Text('Renda (+)'),
+                          selectedColor: Colors.green,
+                          labelStyle: TextStyle(
+                              color: !isDespesa ? Colors.white : Colors.black),
+                          selected: !isDespesa,
+                          onSelected: (val) {
+                            setStateBottomSheet(() {
+                              isDespesa = false;
+                              isPoupanca = false;
+                            });
+                          })
+                    ]),
+                    const SizedBox(height: 15),
+                    TextField(
+                        controller:
+                            TextEditingController(text: responsavelOriginal),
+                        enabled: false,
+                        decoration: const InputDecoration(
+                            labelText: 'Dono da Conta',
+                            border: OutlineInputBorder(),
+                            prefixIcon: Icon(Icons.person))),
+                    const SizedBox(height: 15),
+                    TextField(
+                        controller: descricaoController,
+                        enabled: !isPoupanca,
+                        decoration: const InputDecoration(
+                            labelText: 'Descrição',
+                            border: OutlineInputBorder(),
+                            prefixIcon: Icon(Icons.edit))),
+                    const SizedBox(height: 15),
+                    TextField(
+                        controller: valorController,
+                        keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true),
+                        decoration: const InputDecoration(
+                            labelText: 'Valor (R\$)',
+                            border: OutlineInputBorder(),
+                            prefixIcon: Icon(Icons.attach_money))),
+                    const SizedBox(height: 15),
+                    TextField(
+                        controller: dataRealController,
+                        decoration: const InputDecoration(
+                            labelText: 'Data Real do Acontecimento',
+                            border: OutlineInputBorder(),
+                            prefixIcon: Icon(Icons.calendar_today))),
+                    if (isDespesa)
+                      CategoriaSelector(
+                          selecionadas: catsSel,
+                          onChanged: (l) => setStateBottomSheet(
+                              () => catsSel = l)), // ⚙️ ADD CATEGORIAS
+                    if (isDespesa)
+                      SwitchListTile(
+                          title: const Text('Destinar à Poupança?',
+                              style: TextStyle(
+                                  color: Colors.blue,
+                                  fontWeight: FontWeight.bold)),
+                          value: isPoupanca,
+                          activeColor: Colors.blue,
+                          secondary:
+                              const Icon(Icons.savings, color: Colors.blue),
+                          onChanged: (bool valor) {
+                            setStateBottomSheet(() {
+                              isPoupanca = valor;
+                              if (isPoupanca) {
+                                descricaoAntiga = descricaoController.text;
+                                descricaoController.text = 'Poupança';
+                              } else {
+                                descricaoController.text = descricaoAntiga;
+                              }
+                            });
+                          }),
+                    const SizedBox(height: 20),
+                    SizedBox(
+                        width: double.infinity,
+                        height: 50,
+                        child: ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                                backgroundColor: isPoupanca
+                                    ? Colors.blue
+                                    : (isDespesa ? Colors.red : Colors.green)),
+                            onPressed: () async {
+                              if (descricaoController.text.isNotEmpty &&
+                                  valorController.text.isNotEmpty) {
+                                double valorDigitado =
+                                    parseMoeda(valorController.text);
+                                if (isDespesa && valorDigitado > 0)
+                                  valorDigitado = valorDigitado * -1;
+                                else if (!isDespesa && valorDigitado < 0)
+                                  valorDigitado = valorDigitado * -1;
+
+                                if (!temGrupo) {
+                                  await doc.reference.update({
+                                    'descricao': descricaoController.text,
+                                    'valor': valorDigitado,
+                                    'dataRealString': dataRealController.text,
+                                    'isPoupanca': isPoupanca,
+                                    'categorias': catsSel
+                                  });
+                                  Navigator.pop(context);
+                                } else {
+                                  showDialog(
+                                      context: context,
+                                      builder: (BuildContext dialogContext) {
+                                        return AlertDialog(
+                                            title:
+                                                const Text('Editar Conta Fixa'),
+                                            content: const Text(
+                                                'Deseja atualizar apenas este mês ou este e todos os meses futuros?'),
+                                            actions: [
+                                              TextButton(
+                                                  onPressed: () =>
+                                                      Navigator.pop(
+                                                          dialogContext,
+                                                          'cancelar'),
+                                                  child:
+                                                      const Text('Cancelar')),
+                                              TextButton(
+                                                  onPressed: () =>
+                                                      Navigator.pop(
+                                                          dialogContext,
+                                                          'este'),
+                                                  child: const Text('Só este')),
+                                              TextButton(
+                                                  onPressed: () =>
+                                                      Navigator.pop(
+                                                          dialogContext,
+                                                          'futuros'),
+                                                  child: const Text(
+                                                      'Deste em diante',
+                                                      style: TextStyle(
+                                                          color: Colors.blue,
+                                                          fontWeight:
+                                                              FontWeight.bold)))
+                                            ]);
+                                      }).then((acao) async {
+                                    if (acao == 'este') {
+                                      await doc.reference.update({
+                                        'descricao': descricaoController.text,
+                                        'valor': valorDigitado,
+                                        'dataRealString':
+                                            dataRealController.text,
+                                        'isPoupanca': isPoupanca,
+                                        'categorias': catsSel
+                                      });
+                                      Navigator.pop(context);
+                                    } else if (acao == 'futuros') {
+                                      DateTime dataDeCorte =
+                                          (dados['data'] as Timestamp).toDate();
+                                      var query = await FirebaseFirestore
+                                          .instance
+                                          .collection('lancamentos')
+                                          .where('grupoId',
+                                              isEqualTo: dados['grupoId'])
+                                          .get();
+                                      var batch =
+                                          FirebaseFirestore.instance.batch();
+                                      for (var d in query.docs) {
+                                        var docData =
+                                            (d.data()['data'] as Timestamp)
+                                                .toDate();
+                                        if (docData.year > dataDeCorte.year ||
+                                            (docData.year == dataDeCorte.year &&
+                                                docData.month >=
+                                                    dataDeCorte.month)) {
+                                          batch.update(d.reference, {
+                                            'descricao':
+                                                descricaoController.text,
+                                            'valor': valorDigitado,
+                                            'dataRealString':
+                                                dataRealController.text,
+                                            'isPoupanca': isPoupanca,
+                                            'categorias': catsSel
+                                          });
+                                        }
+                                      }
+                                      await batch.commit();
+                                      Navigator.pop(context);
+                                    }
+                                  });
+                                }
+                              } else {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                        content: Text(
+                                            'Preencha a descrição e o valor!',
+                                            style:
+                                                TextStyle(color: Colors.white)),
+                                        backgroundColor: Colors.red));
+                              }
+                            },
+                            child: const Text('Atualizar',
+                                style: TextStyle(
+                                    fontSize: 16, color: Colors.white)))),
+                    const SizedBox(height: 20),
+                  ],
+                ),
+              ),
+            );
+          });
+        });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    bool isDark = Theme.of(context).brightness == Brightness.dark;
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      body: Column(
+        children: [
+          SeletorMes(dataAtual: mesAno, aoMudar: aoMudarMes),
+          Expanded(
+              child: StreamBuilder<QuerySnapshot>(
+                  stream: FirebaseFirestore.instance
+                      .collection('cartoes')
+                      .snapshots(),
+                  builder: (context, snapshotCartoes) {
+                    if (snapshotCartoes.connectionState ==
+                        ConnectionState.waiting)
+                      return const Center(
+                          child:
+                              CircularProgressIndicator(color: Colors.green));
+                    Map<String, Map<String, dynamic>> infoCartoes = {};
+                    if (snapshotCartoes.hasData) {
+                      for (var c in snapshotCartoes.data!.docs) {
+                        var d = c.data() as Map<String, dynamic>;
+                        infoCartoes[c.id] = {
+                          'nome': d['nome'] ?? 'Cartão',
+                          'cor': d['cor'] ?? Colors.purple.value
+                        };
+                      }
+                    }
+
+                    return StreamBuilder<QuerySnapshot>(
+                      stream: FirebaseFirestore.instance
+                          .collection('lancamentos')
+                          .orderBy('data', descending: true)
+                          .snapshots(),
+                      builder: (context, snapshotLanc) {
+                        if (snapshotLanc.connectionState ==
+                            ConnectionState.waiting)
+                          return const Center(
+                              child: CircularProgressIndicator(
+                                  color: Colors.green));
+
+                        List<DocumentSnapshot> rendas = [];
+                        List<DocumentSnapshot> despesas = [];
+                        Map<String, double> parcelasCartao = {};
+                        Map<String, double> faturaFixaCartao = {};
+
+                        if (snapshotLanc.hasData) {
+                          for (var doc in snapshotLanc.data!.docs) {
+                            final dados = doc.data() as Map<String, dynamic>;
+                            if (dados['data'] == null) continue;
+                            final dataDoBanco =
+                                (dados['data'] as Timestamp).toDate();
+                            if (dataDoBanco.month == mesAno.month &&
+                                dataDoBanco.year == mesAno.year) {
+                              if (dados['isCartao'] == true) {
+                                String cId = dados['cartaoId'] ?? '';
+                                if (cId.isNotEmpty) {
+                                  double val =
+                                      (dados['valor'] ?? 0.0).toDouble();
+                                  double vGasto = val < 0 ? val * -1 : val;
+                                  if (dados['isAjusteFatura'] == true) {
+                                    faturaFixaCartao[cId] = vGasto;
+                                  } else {
+                                    parcelasCartao[cId] =
+                                        (parcelasCartao[cId] ?? 0.0) + vGasto;
+                                  }
+                                }
+                              } else {
+                                if (dados['isDepositoDireto'] == true) continue;
+                                double val = (dados['valor'] ?? 0.0).toDouble();
+                                if (val >= 0) {
+                                  rendas.add(doc);
+                                } else {
+                                  despesas.add(doc);
+                                }
+                              }
+                            }
+                          }
+                        }
+
+                        List<Widget> listaFinal = [];
+
+                        if (rendas.isNotEmpty) {
+                          listaFinal.add(const Padding(
+                              padding:
+                                  EdgeInsets.only(top: 10, left: 16, bottom: 8),
+                              child: Text('Rendas',
+                                  style: TextStyle(
+                                      color: Colors.green,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16))));
+                          for (var docAtivo in rendas) {
+                            final dados =
+                                docAtivo.data() as Map<String, dynamic>;
+                            final descricao =
+                                dados['descricao'] ?? 'Sem descrição';
+                            final valor = (dados['valor'] ?? 0.0).toDouble();
+                            final responsavel = dados['responsavel'] ?? 'N/A';
+                            final temGrupo = dados['grupoId'] != null;
+                            listaFinal.add(Dismissible(
+                              key: Key(docAtivo.id),
+                              direction: DismissDirection.endToStart,
+                              background: Container(
+                                  color: Colors.red,
+                                  alignment: Alignment.centerRight,
+                                  padding: const EdgeInsets.only(right: 20),
+                                  child: const Icon(Icons.delete,
+                                      color: Colors.white, size: 30)),
+                              confirmDismiss: (direction) async {
+                                if (!temGrupo) {
+                                  bool? cf = await showDialog(
+                                      context: context,
+                                      builder: (ctx) => AlertDialog(
+                                              title: const Text('Apagar?'),
+                                              actions: [
+                                                TextButton(
+                                                    onPressed: () =>
+                                                        Navigator.pop(
+                                                            ctx, false),
+                                                    child: const Text('Não')),
+                                                TextButton(
+                                                    onPressed: () =>
+                                                        Navigator.pop(
+                                                            ctx, true),
+                                                    child: const Text('Sim',
+                                                        style: TextStyle(
+                                                            color: Colors.red)))
+                                              ]));
+                                  if (cf == true) {
+                                    await FirebaseFirestore.instance
+                                        .collection('lancamentos')
+                                        .doc(docAtivo.id)
+                                        .delete();
+                                    return true;
+                                  }
+                                  return false;
+                                }
+                                final acao = await showDialog<String>(
+                                    context: context,
+                                    builder: (BuildContext ctx) {
+                                      return AlertDialog(
+                                          title:
+                                              const Text('Excluir Renda Fixa'),
+                                          actions: [
+                                            TextButton(
+                                                onPressed: () => Navigator.pop(
+                                                    ctx, 'cancelar'),
+                                                child: const Text('Cancelar')),
+                                            TextButton(
+                                                onPressed: () =>
+                                                    Navigator.pop(ctx, 'este'),
+                                                child: const Text('Só este')),
+                                            TextButton(
+                                                onPressed: () => Navigator.pop(
+                                                    ctx, 'futuros'),
+                                                child: const Text(
+                                                    'Deste em diante',
+                                                    style: TextStyle(
+                                                        color: Colors.red)))
+                                          ]);
+                                    });
+                                if (acao == null || acao == 'cancelar')
+                                  return false;
+                                if (acao == 'este') {
+                                  await FirebaseFirestore.instance
+                                      .collection('lancamentos')
+                                      .doc(docAtivo.id)
+                                      .delete();
+                                } else if (acao == 'futuros') {
+                                  DateTime dtCorte =
+                                      (dados['data'] as Timestamp).toDate();
+                                  var query = await FirebaseFirestore.instance
+                                      .collection('lancamentos')
+                                      .where('grupoId',
+                                          isEqualTo: dados['grupoId'])
+                                      .get();
+                                  var batch =
+                                      FirebaseFirestore.instance.batch();
+                                  for (var d in query.docs) {
+                                    var docData =
+                                        (d.data()['data'] as Timestamp)
+                                            .toDate();
+                                    if (docData.year > dtCorte.year ||
+                                        (docData.year == dtCorte.year &&
+                                            docData.month >= dtCorte.month)) {
+                                      batch.delete(d.reference);
+                                    } else {
+                                      batch.update(
+                                          d.reference, {'isContaFixa': false});
+                                    }
+                                  }
+                                  await batch.commit();
+                                }
+                                return true;
+                              },
+                              child: Column(children: [
+                                ListTile(
+                                    onTap: () => _abrirFormularioEdicao(
+                                        context, docAtivo),
+                                    leading: const Icon(Icons.arrow_circle_up,
+                                        color: Colors.green, size: 40),
+                                    title: Text(descricao,
+                                        style: const TextStyle(
+                                            fontWeight: FontWeight.bold)),
+                                    subtitle: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Row(children: [
+                                            Text(responsavel),
+                                            if (temGrupo) ...[
+                                              const SizedBox(width: 8),
+                                              const Icon(Icons.repeat,
+                                                  size: 14, color: Colors.grey)
+                                            ]
+                                          ]),
+                                          if (dados['dataRealString'] != null &&
+                                              dados['dataRealString']
+                                                  .toString()
+                                                  .isNotEmpty)
+                                            Text(
+                                                'Data real: ${dados['dataRealString']}',
+                                                style: const TextStyle(
+                                                    fontSize: 12,
+                                                    color: Colors.grey))
+                                        ]),
+                                    trailing: Text(
+                                        'R\$ ${valor.toStringAsFixed(2).replaceAll('.', ',')}',
+                                        style: const TextStyle(
+                                            color: Colors.green,
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 16))),
+                                const Divider()
+                              ]),
+                            ));
+                          }
+                        }
+
+                        Set<String> todosCartoes = {
+                          ...parcelasCartao.keys,
+                          ...faturaFixaCartao.keys
+                        };
+                        if (todosCartoes.isNotEmpty) {
+                          listaFinal.add(const Padding(
+                              padding:
+                                  EdgeInsets.only(top: 20, left: 16, bottom: 8),
+                              child: Text('Faturas de Cartão',
+                                  style: TextStyle(
+                                      color: Colors.purple,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16))));
+                          for (String cartaoId in todosCartoes) {
+                            String nomeC =
+                                infoCartoes[cartaoId]?['nome'] ?? 'Cartão';
+                            Color corC = Color(infoCartoes[cartaoId]?['cor'] ??
+                                Colors.purple.value);
+                            double totalDaFatura =
+                                faturaFixaCartao.containsKey(cartaoId)
+                                    ? faturaFixaCartao[cartaoId]!
+                                    : (parcelasCartao[cartaoId] ?? 0.0);
+                            listaFinal.add(Card(
+                                color: isDark
+                                    ? corC.withOpacity(0.2)
+                                    : corC.withOpacity(0.1),
+                                margin: const EdgeInsets.symmetric(
+                                    horizontal: 16, vertical: 6),
+                                elevation: 0,
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                    side: BorderSide(
+                                        color: corC.withOpacity(0.5))),
+                                child: ListTile(
+                                    leading: Icon(Icons.credit_card,
+                                        color: corC, size: 35),
+                                    title: Text('Fatura: $nomeC',
+                                        style: const TextStyle(
+                                            fontWeight: FontWeight.bold)),
+                                    subtitle: const Text(
+                                        'Visite a aba Cartões para pagar',
+                                        style: TextStyle(
+                                            color: Colors.grey, fontSize: 12)),
+                                    trailing: Text(
+                                        'R\$ ${totalDaFatura.toStringAsFixed(2).replaceAll('.', ',')}',
+                                        style: const TextStyle(
+                                            color: Colors.red,
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 16)))));
+                          }
+                        }
+
+                        if (despesas.isNotEmpty) {
+                          listaFinal.add(const Padding(
+                              padding:
+                                  EdgeInsets.only(top: 20, left: 16, bottom: 8),
+                              child: Text('Despesas e Poupança',
+                                  style: TextStyle(
+                                      color: Colors.red,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16))));
+                          for (var docAtivo in despesas) {
+                            final dados =
+                                docAtivo.data() as Map<String, dynamic>;
+                            final descricao =
+                                dados['descricao'] ?? 'Sem descrição';
+                            final valor = (dados['valor'] ?? 0.0).toDouble();
+                            final responsavel = dados['responsavel'] ?? 'N/A';
+                            final temGrupo = dados['grupoId'] != null;
+                            final isPoupanca = dados['isPoupanca'] ?? false;
+                            final cor = isPoupanca ? Colors.blue : Colors.red;
+                            final icone = isPoupanca
+                                ? Icons.savings
+                                : Icons.arrow_circle_down;
+                            listaFinal.add(Dismissible(
+                              key: Key(docAtivo.id),
+                              direction: DismissDirection.endToStart,
+                              background: Container(
+                                  color: Colors.red,
+                                  alignment: Alignment.centerRight,
+                                  padding: const EdgeInsets.only(right: 20),
+                                  child: const Icon(Icons.delete,
+                                      color: Colors.white, size: 30)),
+                              confirmDismiss: (direction) async {
+                                if (!temGrupo) {
+                                  bool? cf = await showDialog(
+                                      context: context,
+                                      builder: (ctx) => AlertDialog(
+                                              title: const Text('Apagar?'),
+                                              actions: [
+                                                TextButton(
+                                                    onPressed: () =>
+                                                        Navigator.pop(
+                                                            ctx, false),
+                                                    child: const Text('Não')),
+                                                TextButton(
+                                                    onPressed: () =>
+                                                        Navigator.pop(
+                                                            ctx, true),
+                                                    child: const Text('Sim',
+                                                        style: TextStyle(
+                                                            color: Colors.red)))
+                                              ]));
+                                  if (cf == true) {
+                                    await FirebaseFirestore.instance
+                                        .collection('lancamentos')
+                                        .doc(docAtivo.id)
+                                        .delete();
+                                    return true;
+                                  }
+                                  return false;
+                                }
+                                final acao = await showDialog<String>(
+                                    context: context,
+                                    builder: (BuildContext ctx) {
+                                      return AlertDialog(
+                                          title:
+                                              const Text('Excluir Conta Fixa'),
+                                          actions: [
+                                            TextButton(
+                                                onPressed: () => Navigator.pop(
+                                                    ctx, 'cancelar'),
+                                                child: const Text('Cancelar')),
+                                            TextButton(
+                                                onPressed: () =>
+                                                    Navigator.pop(ctx, 'este'),
+                                                child: const Text('Só este')),
+                                            TextButton(
+                                                onPressed: () => Navigator.pop(
+                                                    ctx, 'futuros'),
+                                                child: const Text(
+                                                    'Deste em diante',
+                                                    style: TextStyle(
+                                                        color: Colors.red)))
+                                          ]);
+                                    });
+                                if (acao == null || acao == 'cancelar')
+                                  return false;
+                                if (acao == 'este') {
+                                  await FirebaseFirestore.instance
+                                      .collection('lancamentos')
+                                      .doc(docAtivo.id)
+                                      .delete();
+                                } else if (acao == 'futuros') {
+                                  DateTime dtCorte =
+                                      (dados['data'] as Timestamp).toDate();
+                                  var query = await FirebaseFirestore.instance
+                                      .collection('lancamentos')
+                                      .where('grupoId',
+                                          isEqualTo: dados['grupoId'])
+                                      .get();
+                                  var batch =
+                                      FirebaseFirestore.instance.batch();
+                                  for (var d in query.docs) {
+                                    var docData =
+                                        (d.data()['data'] as Timestamp)
+                                            .toDate();
+                                    if (docData.year > dtCorte.year ||
+                                        (docData.year == dtCorte.year &&
+                                            docData.month >= dtCorte.month)) {
+                                      batch.delete(d.reference);
+                                    } else {
+                                      batch.update(
+                                          d.reference, {'isContaFixa': false});
+                                    }
+                                  }
+                                  await batch.commit();
+                                }
+                                return true;
+                              },
+                              child: Column(children: [
+                                ListTile(
+                                    onTap: () => _abrirFormularioEdicao(
+                                        context, docAtivo),
+                                    leading: Icon(icone, color: cor, size: 40),
+                                    title: Text(descricao,
+                                        style: const TextStyle(
+                                            fontWeight: FontWeight.bold)),
+                                    subtitle: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Row(children: [
+                                            Text(responsavel),
+                                            if (temGrupo) ...[
+                                              const SizedBox(width: 8),
+                                              const Icon(Icons.repeat,
+                                                  size: 14, color: Colors.grey)
+                                            ],
+                                            if (isPoupanca)
+                                              const Text(' (Poupança)',
+                                                  style: TextStyle(
+                                                      color: Colors.blue,
+                                                      fontSize: 12))
+                                          ]),
+                                          if (dados['dataRealString'] != null &&
+                                              dados['dataRealString']
+                                                  .toString()
+                                                  .isNotEmpty)
+                                            Text(
+                                                'Data real: ${dados['dataRealString']}',
+                                                style: const TextStyle(
+                                                    fontSize: 12,
+                                                    color: Colors.grey))
+                                        ]),
+                                    trailing: Text(
+                                        'R\$ ${valor.toStringAsFixed(2).replaceAll('.', ',')}',
+                                        style: TextStyle(
+                                            color: cor,
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 16))),
+                                const Divider()
+                              ]),
+                            ));
+                          }
+                        }
+
+                        if (listaFinal.isEmpty) {
+                          return const Center(
+                              child: Text('Nenhuma conta ou fatura neste mês.',
+                                  style: TextStyle(fontSize: 16)));
+                        }
+                        return ListView(children: listaFinal);
+                      },
+                    );
+                  })),
+        ],
+      ),
+      floatingActionButton: FloatingActionButton(
+          backgroundColor: Colors.green,
+          onPressed: () => _abrirFormulario(context),
+          child: const Icon(Icons.add, color: Colors.white)),
+    );
+  }
+}
+
+class TelaCartoes extends StatelessWidget {
+  final DateTime mesAno;
+  final Function(int) aoMudarMes;
+  final String usuarioLogado;
+
+  const TelaCartoes(
+      {super.key,
+      required this.mesAno,
+      required this.aoMudarMes,
+      required this.usuarioLogado});
+
+  void _abrirFormularioCartao(BuildContext context,
+      {DocumentSnapshot? docToEdit}) {
+    final bool isEdicao = docToEdit != null;
+    Map<String, dynamic> dadosAtuais =
+        isEdicao ? docToEdit.data() as Map<String, dynamic> : {};
+
+    final TextEditingController nomeController =
+        TextEditingController(text: isEdicao ? dadosAtuais['nome'] : '');
+    final TextEditingController limiteController = TextEditingController(
+        text: isEdicao
+            ? (dadosAtuais['limite'] ?? 0.0)
+                .toDouble()
+                .toStringAsFixed(2)
+                .replaceAll('.', ',')
+            : '');
+    final TextEditingController vencimentoController = TextEditingController(
+        text: isEdicao ? dadosAtuais['diaVencimento'].toString() : '');
+
+    List<Color> paleta = [
+      Colors.purple,
+      Colors.blue,
+      Colors.green,
+      Colors.orange,
+      Colors.red,
+      Colors.pink,
+      Colors.teal,
+      Colors.grey
+    ];
+    Color corSelecionada = isEdicao
+        ? Color(dadosAtuais['cor'] ?? Colors.purple.value)
+        : Colors.purple;
+
+    showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+        builder: (BuildContext ctx) {
+          return StatefulBuilder(
+              builder: (BuildContext context, StateSetter setStateBottomSheet) {
+            return Padding(
+              padding: EdgeInsets.only(
+                  bottom: MediaQuery.of(ctx).viewInsets.bottom,
+                  left: 20,
+                  right: 20,
+                  top: 20),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(isEdicao ? 'Editar Cartão' : 'Novo Cartão',
+                        style: const TextStyle(
+                            fontSize: 20, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 15),
+                    TextField(
+                        controller: nomeController,
+                        decoration: const InputDecoration(
+                            labelText: 'Nome do Cartão',
+                            border: OutlineInputBorder(),
+                            prefixIcon: Icon(Icons.credit_card))),
+                    const SizedBox(height: 15),
+                    TextField(
+                        controller: limiteController,
+                        keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true),
+                        decoration: const InputDecoration(
+                            labelText: 'Limite Total (R\$)',
+                            border: OutlineInputBorder(),
+                            prefixIcon: Icon(Icons.attach_money))),
+                    const SizedBox(height: 15),
+                    TextField(
+                        controller: vencimentoController,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                            labelText: 'Dia do Vencimento',
+                            border: OutlineInputBorder(),
+                            prefixIcon: Icon(Icons.calendar_today))),
+                    const SizedBox(height: 20),
+                    const Text('Cor do Cartão:',
+                        style: TextStyle(
+                            fontWeight: FontWeight.bold, color: Colors.grey)),
+                    const SizedBox(height: 10),
+                    Wrap(
+                        spacing: 10,
+                        children: paleta
+                            .map((c) => GestureDetector(
+                                onTap: () => setStateBottomSheet(() {
+                                      corSelecionada = c;
+                                    }),
+                                child: Container(
+                                    width: 40,
+                                    height: 40,
+                                    decoration: BoxDecoration(
+                                        color: c,
+                                        shape: BoxShape.circle,
+                                        border: Border.all(
+                                            color: corSelecionada == c
+                                                ? Colors.black
+                                                : Colors.transparent,
+                                            width: 3)))))
+                            .toList()),
+                    const SizedBox(height: 20),
+                    SizedBox(
+                        width: double.infinity,
+                        height: 50,
+                        child: ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                                backgroundColor: corSelecionada),
+                            onPressed: () {
+                              if (nomeController.text.isNotEmpty &&
+                                  limiteController.text.isNotEmpty &&
+                                  vencimentoController.text.isNotEmpty) {
+                                double limFinal =
+                                    parseMoeda(limiteController.text);
+                                int vencFinal =
+                                    int.tryParse(vencimentoController.text) ??
+                                        1;
+                                if (isEdicao) {
+                                  docToEdit.reference.update({
+                                    'nome': nomeController.text,
+                                    'limite': limFinal,
+                                    'diaVencimento': vencFinal,
+                                    'cor': corSelecionada.value
+                                  });
+                                } else {
+                                  FirebaseFirestore.instance
+                                      .collection('cartoes')
+                                      .add({
+                                    'nome': nomeController.text,
+                                    'limite': limFinal,
+                                    'diaVencimento': vencFinal,
+                                    'cor': corSelecionada.value
+                                  });
+                                }
+                                Navigator.pop(ctx);
+                              } else {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                        content: Text(
+                                            'Preencha todos os campos do cartão!',
+                                            style:
+                                                TextStyle(color: Colors.white)),
+                                        backgroundColor: Colors.red));
+                              }
+                            },
+                            child: Text(
+                                isEdicao
+                                    ? 'Salvar Alterações'
+                                    : 'Salvar Cartão',
+                                style: const TextStyle(
+                                    fontSize: 16, color: Colors.white)))),
+                    if (isEdicao) ...[
+                      const SizedBox(height: 10),
+                      TextButton(
+                          onPressed: () async {
+                            bool? cf = await showDialog(
+                                context: context,
+                                builder: (dCtx) => AlertDialog(
+                                        title: const Text('Excluir Cartão?'),
+                                        content: const Text(
+                                            'Esta ação não pode ser desfeita. TODAS as compras serão apagadas permanentemente. Tem certeza?'),
+                                        actions: [
+                                          TextButton(
+                                              onPressed: () =>
+                                                  Navigator.pop(dCtx, false),
+                                              child: const Text('Cancelar')),
+                                          TextButton(
+                                              onPressed: () =>
+                                                  Navigator.pop(dCtx, true),
+                                              child: const Text('Apagar Tudo',
+                                                  style: TextStyle(
+                                                      color: Colors.red)))
+                                        ]));
+                            if (cf == true) {
+                              await FirebaseFirestore.instance
+                                  .collection('cartoes')
+                                  .doc(docToEdit.id)
+                                  .delete();
+                              var p = await FirebaseFirestore.instance
+                                  .collection('lancamentos')
+                                  .where('cartaoId', isEqualTo: docToEdit.id)
+                                  .get();
+                              var b = FirebaseFirestore.instance.batch();
+                              for (var i in p.docs) {
+                                b.delete(i.reference);
+                              }
+                              await b.commit();
+                              Navigator.pop(ctx);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                      content: Text(
+                                          'Cartão excluído com sucesso!')));
+                            }
+                          },
+                          child: const Text('Excluir Cartão Definitivamente',
+                              style: TextStyle(
+                                  color: Colors.red,
+                                  fontWeight: FontWeight.bold)))
+                    ],
+                    const SizedBox(height: 20),
+                  ],
+                ),
+              ),
+            );
+          });
+        });
+  }
+
+  void _lancarCompra(BuildContext context, String cid, String nomeC) {
+    final TextEditingController desc = TextEditingController(),
+        val = TextEditingController();
+    List<String> catsSel = []; // ⚙️ CATEGORIAS
+    showModalBottomSheet(
+        context: context,
+        builder: (ctx) => StatefulBuilder(
+            builder: (c, setS) => Padding(
+                padding: EdgeInsets.only(
+                    bottom: MediaQuery.of(ctx).viewInsets.bottom,
+                    left: 20,
+                    right: 20,
+                    top: 20),
+                child: SingleChildScrollView(
+                    child: Column(mainAxisSize: MainAxisSize.min, children: [
+                  Text('Compra em $nomeC',
+                      style: const TextStyle(
+                          fontSize: 18, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 10),
+                  TextField(
+                      controller: desc,
+                      decoration:
+                          const InputDecoration(labelText: 'Descrição')),
+                  const SizedBox(height: 10),
+                  TextField(
+                      controller: val,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(labelText: 'Valor')),
+                  const SizedBox(height: 15),
+                  CategoriaSelector(
+                      selecionadas: catsSel,
+                      onChanged: (l) => setS(() => catsSel = l)),
+                  const SizedBox(height: 20), // ⚙️ ADD CATEGORIAS
+                  ElevatedButton(
+                      onPressed: () {
+                        if (desc.text.isNotEmpty) {
+                          double v = parseMoeda(val.text);
+                          if (v > 0) v = v * -1;
+                          DateTime agora = DateTime.now();
+                          // ⚙️ CARTÃO LANÇA NO MESMO MÊS (SEM O +1)
+                          FirebaseFirestore.instance
+                              .collection('lancamentos')
+                              .add({
+                            'descricao': desc.text,
+                            'valor': v,
+                            'responsavel': usuarioLogado,
+                            'data': Timestamp.fromDate(DateTime(mesAno.year,
+                                mesAno.month, agora.day, agora.hour)),
+                            'isCartao': true,
+                            'cartaoId': cid,
+                            'categorias': catsSel
+                          });
+                          Navigator.pop(ctx);
+                        }
+                      },
+                      child: const Text('Lançar Compra'))
+                ])))));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    bool isDark = Theme.of(context).brightness == Brightness.dark;
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      body: Column(
+        children: [
+          SeletorMes(dataAtual: mesAno, aoMudar: aoMudarMes),
+          Expanded(
+            child: StreamBuilder<QuerySnapshot>(
+              stream:
+                  FirebaseFirestore.instance.collection('cartoes').snapshots(),
+              builder: (context, snapshotCartoes) {
+                if (snapshotCartoes.connectionState == ConnectionState.waiting)
+                  return const Center(
+                      child: CircularProgressIndicator(color: Colors.purple));
+                if (!snapshotCartoes.hasData ||
+                    snapshotCartoes.data!.docs.isEmpty)
+                  return const Center(child: Text('Nenhum cartão cadastrado.'));
+
+                final cartoes = snapshotCartoes.data!.docs;
+
+                return StreamBuilder<QuerySnapshot>(
+                    stream: FirebaseFirestore.instance
+                        .collection('lancamentos')
+                        .where('isCartao', isEqualTo: true)
+                        .snapshots(),
+                    builder: (context, snapshotLancamentos) {
+                      if (snapshotLancamentos.connectionState ==
+                          ConnectionState.waiting)
+                        return const Center(
+                            child: CircularProgressIndicator(
+                                color: Colors.purple));
+
+                      Map<String, double> faturaDoMes = {};
+                      Map<String, double> gastosTotaisPendentes = {};
+                      DateTime inicioMesAtual =
+                          DateTime(mesAno.year, mesAno.month, 1);
+                      Map<String, Map<String, double>> parcelasPorMesCartao =
+                          {};
+                      Map<String, Map<String, double>> faturasPorMesCartao = {};
+
+                      if (snapshotLancamentos.hasData) {
+                        for (var doc in snapshotLancamentos.data!.docs) {
+                          var dados = doc.data() as Map<String, dynamic>;
+                          String cId = dados['cartaoId'] ?? '';
+                          if (cId.isEmpty || dados['data'] == null) continue;
+                          DateTime dtCompra =
+                              (dados['data'] as Timestamp).toDate();
+                          double valor = (dados['valor'] ?? 0.0).toDouble();
+                          double valGasto = valor < 0 ? valor * -1 : valor;
+                          String mKey = "${dtCompra.month}_${dtCompra.year}";
+                          if (dados['isAjusteFatura'] == true) {
+                            faturasPorMesCartao.putIfAbsent(
+                                mKey, () => {})[cId] = valGasto;
+                          } else {
+                            parcelasPorMesCartao.putIfAbsent(
+                                    mKey, () => {})[cId] =
+                                (parcelasPorMesCartao[mKey]?[cId] ?? 0) +
+                                    valGasto;
+                          }
+                        }
+                      }
+
+                      String mesAtualKey = "${mesAno.month}_${mesAno.year}";
+                      for (var c in cartoes) {
+                        faturaDoMes[c.id] = faturasPorMesCartao[mesAtualKey]
+                                ?[c.id] ??
+                            parcelasPorMesCartao[mesAtualKey]?[c.id] ??
+                            0.0;
+                      }
+                      Set<String> allMonthKeys = {
+                        ...parcelasPorMesCartao.keys,
+                        ...faturasPorMesCartao.keys
+                      };
+                      for (String mKey in allMonthKeys) {
+                        int m = int.parse(mKey.split('_')[0]);
+                        int y = int.parse(mKey.split('_')[1]);
+                        DateTime dt = DateTime(y, m, 1);
+                        if (dt.isAfter(
+                            inicioMesAtual.subtract(const Duration(days: 1)))) {
+                          for (var c in cartoes) {
+                            double val = faturasPorMesCartao[mKey]?[c.id] ??
+                                parcelasPorMesCartao[mKey]?[c.id] ??
+                                0.0;
+                            gastosTotaisPendentes[c.id] =
+                                (gastosTotaisPendentes[c.id] ?? 0.0) + val;
+                          }
+                        }
+                      }
+
+                      return ListView.builder(
+                        padding: const EdgeInsets.all(16),
+                        itemCount: cartoes.length,
+                        itemBuilder: (context, index) {
+                          final doc = cartoes[index];
+                          final dados = doc.data() as Map<String, dynamic>;
+                          final nome = dados['nome'] ?? 'Cartão';
+                          final limiteTotal =
+                              (dados['limite'] ?? 0.0).toDouble();
+                          final diaVencimento = dados['diaVencimento'] ?? 1;
+                          final faturaAtual = faturaDoMes[doc.id] ?? 0.0;
+                          final limiteDisponivel = limiteTotal -
+                              (gastosTotaisPendentes[doc.id] ?? 0.0);
+                          Color corDoCartao =
+                              Color(dados['cor'] ?? Colors.purple.value);
+                          return GestureDetector(
+                            onTap: () {
+                              Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                      builder: (context) => TelaDetalhesCartao(
+                                          cartaoId: doc.id,
+                                          nomeCartao: nome,
+                                          usuarioLogado: usuarioLogado,
+                                          corTema: corDoCartao)));
+                            },
+                            child: Card(
+                                elevation: 4,
+                                margin: const EdgeInsets.only(bottom: 12),
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(15)),
+                                child: Padding(
+                                    padding: const EdgeInsets.all(16),
+                                    child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Row(
+                                              mainAxisAlignment:
+                                                  MainAxisAlignment
+                                                      .spaceBetween,
+                                              children: [
+                                                Row(children: [
+                                                  Icon(Icons.credit_card,
+                                                      color: corDoCartao,
+                                                      size: 30),
+                                                  const SizedBox(width: 10),
+                                                  Text(nome,
+                                                      style: const TextStyle(
+                                                          fontSize: 20,
+                                                          fontWeight:
+                                                              FontWeight.bold))
+                                                ]),
+                                                IconButton(
+                                                    icon: const Icon(Icons.edit,
+                                                        color: Colors.grey,
+                                                        size: 20),
+                                                    onPressed: () =>
+                                                        _abrirFormularioCartao(
+                                                            context,
+                                                            docToEdit: doc))
+                                              ]),
+                                          const Divider(height: 10),
+                                          Text('Vence dia $diaVencimento',
+                                              style: const TextStyle(
+                                                  color: Colors.grey,
+                                                  fontSize: 12)),
+                                          const SizedBox(height: 15),
+                                          Row(
+                                              mainAxisAlignment:
+                                                  MainAxisAlignment
+                                                      .spaceBetween,
+                                              children: [
+                                                Text(
+                                                    'Fatura de ${obterNomeMes(mesAno.month)}:',
+                                                    style: const TextStyle(
+                                                        fontSize: 16)),
+                                                Text(
+                                                    'R\$ ${faturaAtual.toStringAsFixed(2).replaceAll('.', ',')}',
+                                                    style: TextStyle(
+                                                        color: corDoCartao,
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                        fontSize: 18))
+                                              ]),
+                                          const SizedBox(height: 5),
+                                          Row(
+                                              mainAxisAlignment:
+                                                  MainAxisAlignment
+                                                      .spaceBetween,
+                                              children: [
+                                                const Text('Limite Disponível:',
+                                                    style: TextStyle(
+                                                        color: Colors.grey,
+                                                        fontSize: 14)),
+                                                Text(
+                                                    'R\$ ${limiteDisponivel.toStringAsFixed(2).replaceAll('.', ',')}',
+                                                    style: const TextStyle(
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                        color: Colors.green,
+                                                        fontSize: 14))
+                                              ])
+                                        ]))),
+                          );
+                        },
+                      );
+                    });
+              },
+            ),
+          ),
+        ],
+      ),
+      floatingActionButton: FloatingActionButton(
+          backgroundColor: Colors.purple,
+          onPressed: () => _abrirFormularioCartao(context),
+          child: const Icon(Icons.add, color: Colors.white)),
+    );
+  }
+}
+
+class TelaDetalhesCartao extends StatefulWidget {
+  final String cartaoId;
+  final String nomeCartao;
+  final String usuarioLogado;
+  final Color corTema;
+
+  const TelaDetalhesCartao(
+      {super.key,
+      required this.cartaoId,
+      required this.nomeCartao,
+      required this.usuarioLogado,
+      required this.corTema});
+  @override
+  State<TelaDetalhesCartao> createState() => _TelaDetalhesCartaoState();
+}
+
+class _TelaDetalhesCartaoState extends State<TelaDetalhesCartao> {
+  DateTime _mesAno = obterMesContabil();
+
+  void _mudarMes(int incremento) {
+    setState(() {
+      _mesAno = DateTime(_mesAno.year, _mesAno.month + incremento, 1);
+    });
+  }
+
+  void _abrirEdicaoFaturaFixa(
+      BuildContext context, DocumentSnapshot? ajusteDoc) {
+    final TextEditingController valController = TextEditingController(
+        text: ajusteDoc != null
+            ? (((ajusteDoc.data() as Map)['valor'] ?? 0.0).toDouble() * -1)
+                .toStringAsFixed(2)
+                .replaceAll('.', ',')
+            : '');
+
+    showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+        builder: (ctx) {
+          return Padding(
+              padding: EdgeInsets.only(
+                  bottom: MediaQuery.of(ctx).viewInsets.bottom,
+                  left: 20,
+                  right: 20,
+                  top: 20),
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                Icon(Icons.receipt_long, color: widget.corTema, size: 40),
+                const SizedBox(height: 10),
+                const Text('Definir Fatura Fechada',
+                    style:
+                        TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 10),
+                const Text(
+                    'Este valor vai substituir a soma das parcelas no sistema.',
+                    style: TextStyle(color: Colors.grey, fontSize: 12),
+                    textAlign: TextAlign.center),
+                const SizedBox(height: 15),
+                TextField(
+                    controller: valController,
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
+                    decoration: const InputDecoration(
+                        labelText: 'Valor Total (R\$)',
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.attach_money))),
+                const SizedBox(height: 20),
+                SizedBox(
+                    width: double.infinity,
+                    height: 50,
+                    child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                            backgroundColor: widget.corTema),
+                        onPressed: () {
+                          if (valController.text.isNotEmpty) {
+                            double val = parseMoeda(valController.text);
+                            if (ajusteDoc != null) {
+                              ajusteDoc.reference.update({'valor': val * -1});
+                            } else {
+                              DateTime agora = DateTime.now();
+                              FirebaseFirestore.instance
+                                  .collection('lancamentos')
+                                  .add({
+                                'descricao': 'Fatura do Cartão',
+                                'valor': val * -1,
+                                'responsavel': widget.usuarioLogado,
+                                'data': Timestamp.fromDate(DateTime(
+                                    _mesAno.year,
+                                    _mesAno.month,
+                                    agora.day,
+                                    agora.hour,
+                                    agora.minute)),
+                                'isCartao': true,
+                                'cartaoId': widget.cartaoId,
+                                'isAjusteFatura': true
+                              });
+                            }
+                            Navigator.pop(ctx);
+                          } else {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                    content: Text('Preencha o valor da fatura!',
+                                        style: TextStyle(color: Colors.white)),
+                                    backgroundColor: Colors.red));
+                          }
+                        },
+                        child: const Text('Salvar Valor da Fatura',
+                            style:
+                                TextStyle(fontSize: 16, color: Colors.white)))),
+                if (ajusteDoc != null) ...[
+                  const SizedBox(height: 10),
+                  TextButton(
+                      onPressed: () {
+                        ajusteDoc.reference.delete();
+                        Navigator.pop(ctx);
+                      },
+                      child: const Text(
+                          'Remover Fatura Fixa (Usar Soma das Parcelas)',
+                          style: TextStyle(color: Colors.red)))
+                ],
+                const SizedBox(height: 20),
+              ]));
+        });
+  }
+
+  void _abrirFormularioCompraCartao(BuildContext context) {
+    final TextEditingController desc = TextEditingController(),
+        val = TextEditingController();
+    final TextEditingController totParcCtrl = TextEditingController(text: '1');
+    final TextEditingController parcAtualCtrl =
+        TextEditingController(text: '1');
+    List<String> catsSel = []; // ⚙️ CATEGORIAS
+
+    showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+        builder: (ctx) {
+          return StatefulBuilder(builder: (c, setS) {
+            int totalParc = int.tryParse(totParcCtrl.text) ?? 1;
+
+            return Padding(
+                padding: EdgeInsets.only(
+                    bottom: MediaQuery.of(ctx).viewInsets.bottom,
+                    left: 20,
+                    right: 20,
+                    top: 20),
+                child: SingleChildScrollView(
+                    child: Column(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(Icons.credit_card, color: widget.corTema, size: 40),
+                  const SizedBox(height: 10),
+                  Text('Nova Compra - ${widget.nomeCartao}',
+                      style: const TextStyle(
+                          fontSize: 20, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 15),
+                  TextField(
+                      controller: desc,
+                      decoration: const InputDecoration(
+                          labelText: 'O que comprou?',
+                          border: OutlineInputBorder(),
+                          prefixIcon: Icon(Icons.shopping_bag))),
+                  const SizedBox(height: 15),
+                  TextField(
+                      controller: val,
+                      keyboardType:
+                          const TextInputType.numberWithOptions(decimal: true),
+                      decoration: const InputDecoration(
+                          labelText: 'Valor Total da Compra (R\$)',
+                          border: OutlineInputBorder(),
+                          prefixIcon: Icon(Icons.attach_money))),
+                  const SizedBox(height: 15),
+                  Row(children: [
+                    Expanded(
+                        child: TextField(
+                            controller: totParcCtrl,
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(
+                                labelText: 'Qtd de Parcelas',
+                                border: OutlineInputBorder()),
+                            onChanged: (v) => setS(() {}))),
+                    if (totalParc > 1) ...[
+                      const SizedBox(width: 10),
+                      Expanded(
+                          child: TextField(
+                              controller: parcAtualCtrl,
+                              keyboardType: TextInputType.number,
+                              decoration: const InputDecoration(
+                                  labelText: 'Parcela Atual',
+                                  border: OutlineInputBorder())))
+                    ]
+                  ]),
+                  const SizedBox(height: 15),
+                  CategoriaSelector(
+                      selecionadas: catsSel,
+                      onChanged: (l) => setS(() => catsSel = l)),
+                  const SizedBox(height: 20), // ⚙️ ADD CATEGORIAS
+                  SizedBox(
+                      width: double.infinity,
+                      height: 50,
+                      child: ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                              backgroundColor: widget.corTema),
+                          onPressed: () {
+                            if (desc.text.isNotEmpty && val.text.isNotEmpty) {
+                              int totP = int.tryParse(totParcCtrl.text) ?? 1;
+                              int pAt = int.tryParse(parcAtualCtrl.text) ?? 1;
+                              if (pAt > totP) pAt = totP;
+                              if (pAt < 1) pAt = 1;
+                              double vTot = parseMoeda(val.text);
+                              if (vTot > 0) vTot *= -1;
+                              double vParc = vTot / totP;
+                              DateTime agora = DateTime.now();
+                              String? gId = totP > 1
+                                  ? agora.millisecondsSinceEpoch.toString()
+                                  : null;
+                              int vezes = totP - pAt + 1;
+                              for (int i = 0; i < vezes; i++) {
+                                int numP = pAt + i;
+                                String descF = totP > 1
+                                    ? '${desc.text} ($numP/$totP)'
+                                    : desc.text;
+                                // ⚙️ CARTÃO LANÇA NO MESMO MÊS (SEM O +1 + i, APENAS + i)
+                                FirebaseFirestore.instance
+                                    .collection('lancamentos')
+                                    .add({
+                                      'descricao': descF,
+                                      'valor': vParc,
+                                      'responsavel': widget.usuarioLogado,
+                                      'data': Timestamp.fromDate(DateTime(
+                                          _mesAno.year,
+                                          _mesAno.month + i,
+                                          agora.day,
+                                          agora.hour,
+                                          agora.minute,
+                                          agora.second,
+                                          agora.millisecond)),
+                                      'isCartao': true,
+                                      'cartaoId': widget.cartaoId,
+                                      'categorias': catsSel
+                                    }..addAll(
+                                        gId != null ? {'grupoId': gId} : {}));
+                              }
+                              Navigator.pop(ctx);
+                            } else {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                      content: Text(
+                                          'Por favor, preencha o que comprou e o valor!',
+                                          style:
+                                              TextStyle(color: Colors.white)),
+                                      backgroundColor: Colors.red));
+                            }
+                          },
+                          child: const Text('Lançar Compra',
+                              style: TextStyle(
+                                  fontSize: 16, color: Colors.white)))),
+                  const SizedBox(height: 20),
+                ])));
+          });
+        });
+  }
+
+  void _abrirFormularioEdicaoCompraCartao(
+      BuildContext context, DocumentSnapshot doc) {
+    final dados = doc.data() as Map<String, dynamic>;
+    final double valorAtual = (dados['valor'] ?? 0.0).toDouble();
+    final temGrupo = dados['grupoId'] != null;
+
+    final TextEditingController descController =
+        TextEditingController(text: dados['descricao']);
+    final TextEditingController valController = TextEditingController(
+        text: (valorAtual < 0 ? valorAtual * -1 : valorAtual)
+            .toStringAsFixed(2)
+            .replaceAll('.', ','));
+    List<String> catsSel =
+        List<String>.from(dados['categorias'] ?? []); // ⚙️ LÊ CATEGORIAS SALVAS
+
+    showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+        builder: (BuildContext ctx) {
+          return StatefulBuilder(builder: (c, setS) {
+            return Padding(
+                padding: EdgeInsets.only(
+                    bottom: MediaQuery.of(ctx).viewInsets.bottom,
+                    left: 20,
+                    right: 20,
+                    top: 20),
+                child: SingleChildScrollView(
+                    child: Column(mainAxisSize: MainAxisSize.min, children: [
+                  const Text('Editar Compra',
+                      style:
+                          TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 15),
+                  TextField(
+                      controller: descController,
+                      decoration: const InputDecoration(
+                          labelText: 'Descrição',
+                          border: OutlineInputBorder(),
+                          prefixIcon: Icon(Icons.edit))),
+                  const SizedBox(height: 15),
+                  TextField(
+                      controller: valController,
+                      keyboardType:
+                          const TextInputType.numberWithOptions(decimal: true),
+                      decoration: const InputDecoration(
+                          labelText: 'Valor da Parcela (R\$)',
+                          border: OutlineInputBorder(),
+                          prefixIcon: Icon(Icons.attach_money))),
+                  const SizedBox(height: 15),
+                  CategoriaSelector(
+                      selecionadas: catsSel,
+                      onChanged: (l) => setS(() => catsSel = l)),
+                  const SizedBox(height: 20), // ⚙️ ADD CATEGORIAS
+                  SizedBox(
+                    width: double.infinity,
+                    height: 50,
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                          backgroundColor: widget.corTema),
+                      onPressed: () async {
+                        if (descController.text.isNotEmpty &&
+                            valController.text.isNotEmpty) {
+                          double valorDigitado = parseMoeda(valController.text);
+                          if (valorDigitado > 0) valorDigitado *= -1;
+
+                          if (!temGrupo) {
+                            await doc.reference.update({
+                              'descricao': descController.text,
+                              'valor': valorDigitado,
+                              'categorias': catsSel
+                            });
+                            Navigator.pop(ctx);
+                          } else {
+                            showDialog(
+                                context: context,
+                                builder: (BuildContext dCtx) {
+                                  return AlertDialog(
+                                      title:
+                                          const Text('Editar Compra Parcelada'),
+                                      content: const Text(
+                                          'Atualizar apenas este mês ou este e os futuros?'),
+                                      actions: [
+                                        TextButton(
+                                            onPressed: () =>
+                                                Navigator.pop(dCtx, 'cancelar'),
+                                            child: const Text('Cancelar')),
+                                        TextButton(
+                                            onPressed: () =>
+                                                Navigator.pop(dCtx, 'este'),
+                                            child: const Text('Só este')),
+                                        TextButton(
+                                            onPressed: () =>
+                                                Navigator.pop(dCtx, 'futuros'),
+                                            child: Text('Deste em diante',
+                                                style: TextStyle(
+                                                    color: widget.corTema,
+                                                    fontWeight:
+                                                        FontWeight.bold)))
+                                      ]);
+                                }).then((acao) async {
+                              if (acao == 'este') {
+                                await doc.reference.update({
+                                  'descricao': descController.text,
+                                  'valor': valorDigitado,
+                                  'categorias': catsSel
+                                });
+                                Navigator.pop(ctx);
+                              } else if (acao == 'futuros') {
+                                DateTime dtCorte =
+                                    (dados['data'] as Timestamp).toDate();
+                                var query = await FirebaseFirestore.instance
+                                    .collection('lancamentos')
+                                    .where('grupoId',
+                                        isEqualTo: dados['grupoId'])
+                                    .get();
+                                var batch = FirebaseFirestore.instance.batch();
+                                for (var d in query.docs) {
+                                  var docData =
+                                      (d.data()['data'] as Timestamp).toDate();
+                                  if (docData.year > dtCorte.year ||
+                                      (docData.year == dtCorte.year &&
+                                          docData.month >= dtCorte.month)) {
+                                    batch.update(d.reference, {
+                                      'valor': valorDigitado,
+                                      'descricao': descController.text,
+                                      'categorias': catsSel
+                                    });
+                                  }
+                                }
+                                await batch.commit();
+                                Navigator.pop(ctx);
+                              }
+                            });
+                          }
+                        } else {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                  content: Text(
+                                      'Preencha a descrição e o valor!',
+                                      style: TextStyle(color: Colors.white)),
+                                  backgroundColor: Colors.red));
+                        }
+                      },
+                      child: const Text('Atualizar Compra',
+                          style: TextStyle(fontSize: 16, color: Colors.white)),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                ])));
+          });
+        });
+  }
+
+  void _opcoesCompra(BuildContext context, DocumentSnapshot doc) {
+    final dados = doc.data() as Map<String, dynamic>;
+    final temGrupo = dados['grupoId'] != null;
+
+    showModalBottomSheet(
+        context: context,
+        shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+        builder: (ctx) {
+          return Padding(
+              padding: const EdgeInsets.symmetric(vertical: 20),
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                const Text('O que deseja fazer?',
+                    style:
+                        TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 15),
+                ListTile(
+                    leading: const Icon(Icons.edit, color: Colors.blue),
+                    title: const Text('Editar Compra'),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      _abrirFormularioEdicaoCompraCartao(context, doc);
+                    }),
+                const Divider(),
+                ListTile(
+                    leading: Icon(Icons.fast_forward, color: widget.corTema),
+                    title: Text(
+                        'Adiantar para Hoje (${obterNomeMes(DateTime.now().month)})'),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      DateTime hj = DateTime.now();
+                      doc.reference.update({
+                        'data': Timestamp.fromDate(
+                            DateTime(hj.year, hj.month, hj.day, hj.hour))
+                      });
+                      ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Parcela adiantada!')));
+                    }),
+                const Divider(),
+                ListTile(
+                    leading: const Icon(Icons.delete, color: Colors.red),
+                    title: const Text('Apagar Compra',
+                        style: TextStyle(color: Colors.red)),
+                    onTap: () async {
+                      Navigator.pop(ctx);
+                      if (!temGrupo) {
+                        bool? cf = await showDialog(
+                            context: context,
+                            builder: (dCtx) => AlertDialog(
+                                    title: const Text('Apagar?'),
+                                    actions: [
+                                      TextButton(
+                                          onPressed: () =>
+                                              Navigator.pop(dCtx, false),
+                                          child: const Text('Não')),
+                                      TextButton(
+                                          onPressed: () =>
+                                              Navigator.pop(dCtx, true),
+                                          child: const Text('Sim',
+                                              style:
+                                                  TextStyle(color: Colors.red)))
+                                    ]));
+                        if (cf == true) {
+                          await doc.reference.delete();
+                        }
+                      } else {
+                        final acao = await showDialog<String>(
+                            context: context,
+                            builder: (BuildContext dCtx) {
+                              return AlertDialog(
+                                  title: const Text('Excluir Compra Parcelada'),
+                                  content: const Text(
+                                      'Apagar apenas este mês ou este e todos os meses futuros?'),
+                                  actions: [
+                                    TextButton(
+                                        onPressed: () =>
+                                            Navigator.pop(dCtx, 'cancelar'),
+                                        child: const Text('Cancelar')),
+                                    TextButton(
+                                        onPressed: () =>
+                                            Navigator.pop(dCtx, 'este'),
+                                        child: const Text('Só este')),
+                                    TextButton(
+                                        onPressed: () =>
+                                            Navigator.pop(dCtx, 'futuros'),
+                                        child: const Text('Deste em diante',
+                                            style:
+                                                TextStyle(color: Colors.red)))
+                                  ]);
+                            });
+                        if (acao == 'este') {
+                          await doc.reference.delete();
+                        } else if (acao == 'futuros') {
+                          DateTime dtCorte =
+                              (dados['data'] as Timestamp).toDate();
+                          var query = await FirebaseFirestore.instance
+                              .collection('lancamentos')
+                              .where('grupoId', isEqualTo: dados['grupoId'])
+                              .get();
+                          var batch = FirebaseFirestore.instance.batch();
+                          for (var d in query.docs) {
+                            var docData =
+                                (d.data()['data'] as Timestamp).toDate();
+                            if (docData.year > dtCorte.year ||
+                                (docData.year == dtCorte.year &&
+                                    docData.month >= dtCorte.month)) {
+                              batch.delete(d.reference);
+                            }
+                          }
+                          await batch.commit();
+                        }
+                      }
+                    }),
+              ]));
+        });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    bool isDark = Theme.of(context).brightness == Brightness.dark;
+    DateTime hj = DateTime.now();
+    String diaTopo =
+        "${hj.day.toString().padLeft(2, '0')}/${hj.month.toString().padLeft(2, '0')}";
+
+    return Scaffold(
+      appBar: AppBar(
+          title: Text('Fatura ${widget.nomeCartao}'),
+          backgroundColor: widget.corTema,
+          centerTitle: true,
+          actions: [
+            Center(
+                child: Padding(
+              padding: const EdgeInsets.only(right: 16.0),
+              child: Text(diaTopo,
+                  style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white70)),
+            ))
+          ]),
+      body: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(vertical: 10),
+            color: isDark
+                ? widget.corTema.withOpacity(0.2)
+                : widget.corTema.withOpacity(0.1),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                IconButton(
+                    icon: Icon(Icons.arrow_back_ios,
+                        size: 18, color: widget.corTema),
+                    onPressed: () => _mudarMes(-1)),
+                const SizedBox(width: 10),
+                Text('${obterNomeMes(_mesAno.month)} ${_mesAno.year}',
+                    style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: widget.corTema)),
+                const SizedBox(width: 10),
+                IconButton(
+                    icon: Icon(Icons.arrow_forward_ios,
+                        size: 18, color: widget.corTema),
+                    onPressed: () => _mudarMes(1)),
+              ],
+            ),
+          ),
+          Expanded(
+            child: StreamBuilder<QuerySnapshot>(
+              stream: FirebaseFirestore.instance
+                  .collection('lancamentos')
+                  .where('cartaoId', isEqualTo: widget.cartaoId)
+                  .snapshots(),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting)
+                  return Center(
+                      child: CircularProgressIndicator(color: widget.corTema));
+
+                final docs = snapshot.data?.docs.where((doc) {
+                      final dt =
+                          ((doc.data() as Map)['data'] as Timestamp?)?.toDate();
+                      return dt != null &&
+                          dt.month == _mesAno.month &&
+                          dt.year == _mesAno.year;
+                    }).toList() ??
+                    [];
+
+                DocumentSnapshot? ajusteDoc;
+                List<DocumentSnapshot> regularDocs = [];
+                double totalSomaParcelas = 0.0;
+
+                for (var doc in docs) {
+                  final d = doc.data() as Map<String, dynamic>;
+                  if (d['isAjusteFatura'] == true) {
+                    ajusteDoc = doc;
+                  } else {
+                    regularDocs.add(doc);
+                    double val = (d['valor'] ?? 0.0).toDouble();
+                    totalSomaParcelas += val < 0 ? val * -1 : val;
+                  }
+                }
+
+                double totalFaturaMostrado = ajusteDoc != null
+                    ? (((ajusteDoc.data() as Map)['valor'] ?? 0.0).toDouble() *
+                        -1)
+                    : totalSomaParcelas;
+
+                return Column(
+                  children: [
+                    Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Text(
+                            'Total da Fatura: R\$ ${totalFaturaMostrado.toStringAsFixed(2).replaceAll('.', ',')}',
+                            style: TextStyle(
+                                fontSize: 22,
+                                fontWeight: FontWeight.bold,
+                                color: widget.corTema))),
+                    Expanded(
+                        child: ListView.builder(
+                            itemCount: regularDocs.length + 1,
+                            itemBuilder: (c, index) {
+                              if (index == 0) {
+                                return InkWell(
+                                  onTap: () => _abrirEdicaoFaturaFixa(
+                                      context, ajusteDoc),
+                                  child: Container(
+                                    color: isDark
+                                        ? widget.corTema.withOpacity(0.2)
+                                        : widget.corTema.withOpacity(0.05),
+                                    child: ListTile(
+                                      leading: Icon(Icons.receipt_long,
+                                          color: widget.corTema, size: 35),
+                                      title: const Text('Fatura do Cartão',
+                                          style: TextStyle(
+                                              fontWeight: FontWeight.bold)),
+                                      subtitle: Text(
+                                          ajusteDoc != null
+                                              ? 'Valor fixo (as compras abaixo não somam na aba Resumo)'
+                                              : 'Toque para fixar o total da fatura',
+                                          style: const TextStyle(fontSize: 12)),
+                                      trailing: Text(
+                                          ajusteDoc != null
+                                              ? 'R\$ ${totalFaturaMostrado.toStringAsFixed(2).replaceAll('.', ',')}'
+                                              : 'Automático',
+                                          style: TextStyle(
+                                              color: widget.corTema,
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 16)),
+                                    ),
+                                  ),
+                                );
+                              }
+                              final doc = regularDocs[index - 1];
+                              final d = doc.data() as Map;
+                              return InkWell(
+                                  onTap: () => _opcoesCompra(context, doc),
+                                  child: ListTile(
+                                      leading: Icon(Icons.shopping_bag,
+                                          color: widget.corTema),
+                                      title: Text(d['descricao'] ?? ''),
+                                      subtitle: Text(
+                                          'Feito por: ${d['responsavel']}'),
+                                      trailing: Text(
+                                          'R\$ ${(d['valor'] * -1).toStringAsFixed(2).replaceAll('.', ',')}',
+                                          style: const TextStyle(
+                                              color: Colors.red,
+                                              fontWeight: FontWeight.bold))));
+                            }))
+                  ],
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+      floatingActionButton: FloatingActionButton(
+          backgroundColor: widget.corTema,
+          onPressed: () => _abrirFormularioCompraCartao(context),
+          child: const Icon(Icons.add, color: Colors.white)),
+    );
+  }
+}
+
+class TelaPoupanca extends StatelessWidget {
+  final DateTime mesAno;
+  final Function(int) aoMudarMes;
+  final String usuarioLogado;
+
+  const TelaPoupanca(
+      {super.key,
+      required this.mesAno,
+      required this.aoMudarMes,
+      required this.usuarioLogado});
+
+  void _abrirFormularioDepositoDireto(BuildContext context) {
+    final TextEditingController descCtrl =
+        TextEditingController(text: 'Saldo Inicial / Extra');
+    final TextEditingController valCtrl = TextEditingController();
+
+    showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+        builder: (ctx) {
+          return Padding(
+              padding: EdgeInsets.only(
+                  bottom: MediaQuery.of(ctx).viewInsets.bottom,
+                  left: 20,
+                  right: 20,
+                  top: 20),
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                const Icon(Icons.account_balance, color: Colors.blue, size: 40),
+                const SizedBox(height: 10),
+                const Text('Depósito Direto',
+                    style:
+                        TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 10),
+                const Text(
+                    'Esse valor vai direto para o cofre sem afetar as despesas da aba Resumo.',
+                    style: TextStyle(color: Colors.grey, fontSize: 12),
+                    textAlign: TextAlign.center),
+                const SizedBox(height: 15),
+                TextField(
+                    controller: descCtrl,
+                    decoration: const InputDecoration(
+                        labelText: 'Descrição',
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.edit))),
+                const SizedBox(height: 15),
+                TextField(
+                    controller: valCtrl,
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
+                    decoration: const InputDecoration(
+                        labelText: 'Valor (R\$)',
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.attach_money))),
+                const SizedBox(height: 20),
+                SizedBox(
+                    width: double.infinity,
+                    height: 50,
+                    child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.blue),
+                        onPressed: () {
+                          if (valCtrl.text.isNotEmpty &&
+                              descCtrl.text.isNotEmpty) {
+                            double val = parseMoeda(valCtrl.text);
+                            DateTime agora = DateTime.now();
+                            FirebaseFirestore.instance
+                                .collection('lancamentos')
+                                .add({
+                              'descricao': descCtrl.text,
+                              'valor': val * -1,
+                              'responsavel': usuarioLogado,
+                              'data': Timestamp.fromDate(DateTime(
+                                  mesAno.year,
+                                  mesAno.month,
+                                  agora.day,
+                                  agora.hour,
+                                  agora.minute)),
+                              'isCartao': false,
+                              'isPoupanca': true,
+                              'poupancaConfirmada': true,
+                              'isDepositoDireto': true
+                            });
+                            Navigator.pop(ctx);
+                          }
+                        },
+                        child: const Text('Adicionar ao Cofre',
+                            style:
+                                TextStyle(color: Colors.white, fontSize: 16)))),
+                const SizedBox(height: 20),
+              ]));
+        });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    bool isDark = Theme.of(context).brightness == Brightness.dark;
+    return Scaffold(
+        backgroundColor: Colors.transparent,
+        body: Column(
+          children: [
+            SeletorMes(dataAtual: mesAno, aoMudar: aoMudarMes),
+            Expanded(
+              child: StreamBuilder<QuerySnapshot>(
+                  stream: FirebaseFirestore.instance
+                      .collection('lancamentos')
+                      .where('isPoupanca', isEqualTo: true)
+                      .snapshots(),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting)
+                      return const Center(
+                          child: CircularProgressIndicator(color: Colors.blue));
+                    double totalConfirmadoSempre = 0.0;
+                    List<DocumentSnapshot> poupancasDoMes = [];
+                    if (snapshot.hasData) {
+                      for (var doc in snapshot.data!.docs) {
+                        final dados = doc.data() as Map<String, dynamic>;
+                        double valor = (dados['valor'] ?? 0.0).toDouble();
+                        if (valor < 0) valor = valor * -1;
+                        bool confirmada = dados['poupancaConfirmada'] ?? false;
+                        if (confirmada) {
+                          totalConfirmadoSempre += valor;
+                        }
+                        if (dados['data'] != null) {
+                          final dataDoBanco =
+                              (dados['data'] as Timestamp).toDate();
+                          if (dataDoBanco.month == mesAno.month &&
+                              dataDoBanco.year == mesAno.year) {
+                            poupancasDoMes.add(doc);
+                          }
+                        }
+                      }
+                    }
+                    return Column(
+                      children: [
+                        Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(20),
+                            margin: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                    colors: [
+                                      Colors.blue.shade400,
+                                      Colors.blue.shade800
+                                    ],
+                                    begin: Alignment.topLeft,
+                                    end: Alignment.bottomRight),
+                                borderRadius: BorderRadius.circular(20),
+                                boxShadow: [
+                                  BoxShadow(
+                                      color: Colors.blue.shade200,
+                                      blurRadius: 10,
+                                      offset: const Offset(0, 5))
+                                ]),
+                            child: Column(children: [
+                              const Icon(Icons.savings,
+                                  color: Colors.white, size: 50),
+                              const SizedBox(height: 10),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  const Text('Total Acumulado Confirmado',
+                                      style: TextStyle(
+                                          color: Colors.white70, fontSize: 16)),
+                                  const SizedBox(width: 8),
+                                  GestureDetector(
+                                    onTap: () =>
+                                        _abrirFormularioDepositoDireto(context),
+                                    child: const Icon(Icons.add_circle,
+                                        color: Colors.white, size: 22),
+                                  )
+                                ],
+                              ),
+                              Text(
+                                  'R\$ ${totalConfirmadoSempre.toStringAsFixed(2).replaceAll('.', ',')}',
+                                  style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 32,
+                                      fontWeight: FontWeight.bold))
+                            ])),
+                        const Divider(height: 30),
+                        const Text('Depósitos do Mês',
+                            style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.blueGrey)),
+                        const SizedBox(height: 10),
+                        Expanded(
+                          child: poupancasDoMes.isEmpty
+                              ? const Center(
+                                  child: Text(
+                                      'Nenhum depósito planejado para este mês.',
+                                      style: TextStyle(color: Colors.grey)))
+                              : ListView.builder(
+                                  itemCount: poupancasDoMes.length,
+                                  itemBuilder: (context, index) {
+                                    final doc = poupancasDoMes[index];
+                                    final dados =
+                                        doc.data() as Map<String, dynamic>;
+                                    final descricao =
+                                        dados['descricao'] ?? 'Poupança';
+                                    final valor =
+                                        ((dados['valor'] ?? 0.0).toDouble()) *
+                                            -1;
+                                    final confirmada =
+                                        dados['poupancaConfirmada'] ?? false;
+                                    final temGrupo = dados['grupoId'] != null;
+                                    return Dismissible(
+                                      key: Key(doc.id),
+                                      direction: DismissDirection.endToStart,
+                                      background: Container(
+                                          color: Colors.red,
+                                          alignment: Alignment.centerRight,
+                                          padding:
+                                              const EdgeInsets.only(right: 20),
+                                          child: const Icon(Icons.delete,
+                                              color: Colors.white, size: 30)),
+                                      confirmDismiss: (direction) async {
+                                        if (!temGrupo) {
+                                          bool? conf = await showDialog(
+                                              context: context,
+                                              builder: (ctx) => AlertDialog(
+                                                      title:
+                                                          const Text('Apagar?'),
+                                                      actions: [
+                                                        TextButton(
+                                                            onPressed: () =>
+                                                                Navigator.pop(
+                                                                    ctx, false),
+                                                            child: const Text(
+                                                                'Cancelar')),
+                                                        TextButton(
+                                                            onPressed: () =>
+                                                                Navigator.pop(
+                                                                    ctx, true),
+                                                            child: const Text(
+                                                                'Apagar',
+                                                                style: TextStyle(
+                                                                    color: Colors
+                                                                        .red)))
+                                                      ]));
+                                          if (conf == true) {
+                                            await doc.reference.delete();
+                                            return true;
+                                          }
+                                          return false;
+                                        }
+                                        final acao = await showDialog<String>(
+                                            context: context,
+                                            builder: (ctx) {
+                                              return AlertDialog(
+                                                  title: const Text(
+                                                      'Excluir Poupança Fixa'),
+                                                  actions: [
+                                                    TextButton(
+                                                        onPressed: () =>
+                                                            Navigator.pop(ctx,
+                                                                'cancelar'),
+                                                        child: const Text(
+                                                            'Cancelar')),
+                                                    TextButton(
+                                                        onPressed: () =>
+                                                            Navigator.pop(
+                                                                ctx, 'este'),
+                                                        child: const Text(
+                                                            'Só este')),
+                                                    TextButton(
+                                                        onPressed: () =>
+                                                            Navigator.pop(
+                                                                ctx, 'futuros'),
+                                                        child: const Text(
+                                                            'Deste em diante',
+                                                            style: TextStyle(
+                                                                color: Colors
+                                                                    .red)))
+                                                  ]);
+                                            });
+                                        if (acao == null || acao == 'cancelar')
+                                          return false;
+                                        if (acao == 'este') {
+                                          await doc.reference.delete();
+                                        } else if (acao == 'futuros') {
+                                          DateTime dtCorte =
+                                              (dados['data'] as Timestamp)
+                                                  .toDate();
+                                          var query = await FirebaseFirestore
+                                              .instance
+                                              .collection('lancamentos')
+                                              .where('grupoId',
+                                                  isEqualTo: dados['grupoId'])
+                                              .get();
+                                          var batch = FirebaseFirestore.instance
+                                              .batch();
+                                          for (var d in query.docs) {
+                                            var docData =
+                                                (d.data()['data'] as Timestamp)
+                                                    .toDate();
+                                            if (docData.year > dtCorte.year ||
+                                                (docData.year == dtCorte.year &&
+                                                    docData.month >=
+                                                        dtCorte.month)) {
+                                              batch.delete(d.reference);
+                                            } else {
+                                              batch.update(d.reference,
+                                                  {'isContaFixa': false});
+                                            }
+                                          }
+                                          await batch.commit();
+                                        }
+                                        return true;
+                                      },
+                                      child: Card(
+                                        color: isDark
+                                            ? const Color(0xFF1E1E1E)
+                                            : Colors.white,
+                                        margin: const EdgeInsets.symmetric(
+                                            horizontal: 16, vertical: 6),
+                                        shape: RoundedRectangleBorder(
+                                            borderRadius:
+                                                BorderRadius.circular(10)),
+                                        child: ListTile(
+                                          leading: CircleAvatar(
+                                              backgroundColor: confirmada
+                                                  ? Colors.green.shade100
+                                                  : Colors.orange.shade100,
+                                              child: Icon(
+                                                  confirmada
+                                                      ? Icons.check
+                                                      : Icons.access_time,
+                                                  color: confirmada
+                                                      ? Colors.green
+                                                      : Colors.orange)),
+                                          title: Text(descricao,
+                                              style: const TextStyle(
+                                                  fontWeight: FontWeight.bold)),
+                                          subtitle: Text(
+                                              confirmada
+                                                  ? 'Aplicado com sucesso'
+                                                  : 'Aguardando depósito',
+                                              style: TextStyle(
+                                                  color: confirmada
+                                                      ? Colors.green
+                                                      : Colors.orange,
+                                                  fontSize: 12)),
+                                          trailing: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Flexible(
+                                                    child: Text(
+                                                        'R\$ ${valor.toStringAsFixed(2).replaceAll('.', ',')}',
+                                                        style: const TextStyle(
+                                                            fontWeight:
+                                                                FontWeight.bold,
+                                                            fontSize: 16),
+                                                        overflow: TextOverflow
+                                                            .ellipsis)),
+                                                const SizedBox(width: 5),
+                                                if (!confirmada)
+                                                  ElevatedButton(
+                                                      style: ElevatedButton
+                                                          .styleFrom(
+                                                              backgroundColor:
+                                                                  Colors.blue,
+                                                              padding: const EdgeInsets
+                                                                      .symmetric(
+                                                                  horizontal:
+                                                                      5)),
+                                                      onPressed: () {
+                                                        doc.reference.update({
+                                                          'poupancaConfirmada':
+                                                              true
+                                                        });
+                                                      },
+                                                      child: const Text('OK',
+                                                          style: TextStyle(
+                                                              color:
+                                                                  Colors.white,
+                                                              fontSize: 12)))
+                                                else
+                                                  IconButton(
+                                                      icon: const Icon(
+                                                          Icons.undo,
+                                                          color: Colors.grey,
+                                                          size: 20),
+                                                      onPressed: () {
+                                                        doc.reference.update({
+                                                          'poupancaConfirmada':
+                                                              false
+                                                        });
+                                                      })
+                                              ]),
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
+                        )
+                      ],
+                    );
+                  }),
+            )
+          ],
+        ));
+  }
+}
