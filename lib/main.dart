@@ -7,7 +7,6 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:universal_html/html.dart' as html;
 import 'dart:convert';
 import 'dart:math';
-import 'package:snow_fall_animation/snow_fall_animation.dart';
 import 'package:local_auth/local_auth.dart'; // 👈 Adicione lá nos imports
 
 final ValueNotifier<ThemeMode> appThemeMode = ValueNotifier(ThemeMode.dark);
@@ -54,6 +53,8 @@ DateTime obterMesContabil() {
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Inicializa o Firebase rápido
   await Firebase.initializeApp(
     options: const FirebaseOptions(
       apiKey: "AIzaSyAfxkBTSVglkIyLwvYYFY_pvQ5w5MGrTqU",
@@ -65,14 +66,14 @@ void main() async {
     ),
   );
 
-  await _injetarConfiguracoesIniciaisBanco();
-
+  // Lê o cache do celular de forma síncrona/rápida
   final prefs = await SharedPreferences.getInstance();
   final isDark = prefs.getBool('isDark') ?? true;
   appThemeMode.value = isDark ? ThemeMode.dark : ThemeMode.light;
   appTextScale.value = prefs.getDouble('textScale') ?? 1.0;
   appUsaBiometria.value = prefs.getBool('usaBiometria') ?? false;
 
+  // 🚀 O APP ABRE AGORA MESMO, SEM ESPERAR O FIRESTORE!
   runApp(const MyApp());
 }
 
@@ -256,6 +257,7 @@ void abrirConfiguracoes(BuildContext context) {
                   );
                 },
               ),
+              // 👇 NOVO INTERRUPTOR DE EFEITOS (NEVE) 👇
             ],
           ),
           actions: [
@@ -288,6 +290,8 @@ class _TelaLoginState extends State<TelaLogin> {
   @override
   void initState() {
     super.initState();
+    Future.microtask(() => _injetarConfiguracoesIniciaisBanco());
+
     _iniciarAnimacaoCinema();
   }
 
@@ -526,15 +530,6 @@ class _TelaLoginState extends State<TelaLogin> {
       backgroundColor: corFundo,
       body: Stack(
         children: [
-          // ❄️ 2. A MÁGICA DA NEVE! (Fica atrás de tudo)
-          if (isNatal())
-            const Positioned.fill(
-              child: IgnorePointer(
-                // 👈 Impede que a neve "roube" seus cliques na tela!
-                child: SnowFallAnimation(), // 👈 O efeito da neve!
-              ),
-            ),
-
           // 📱 3. O SEU CÓDIGO ORIGINAL VEM AQUI, POR CIMA DA NEVE!
           SingleChildScrollView(
             // 👇 Trava a altura para ocupar a tela inteira (descontando o rodapé)
@@ -745,7 +740,7 @@ class _TelaLoginState extends State<TelaLogin> {
         child: Padding(
           padding: const EdgeInsets.only(bottom: 20.0),
           child: Text(
-            'Versão 2.5\n© ${DateTime.now().year} DOUB. Todos os direitos reservados.',
+            'Versão 2.6\n© ${DateTime.now().year} DOUB. Todos os direitos reservados.',
             textAlign: TextAlign.center,
             style: const TextStyle(
                 fontSize: 14.5,
@@ -4898,5 +4893,5 @@ class _EstatisticasMensal extends StatelessWidget {
 bool isNatal() {
   DateTime hoje = DateTime.now();
   // Se o mês for 12 (Dezembro), retorna true e liga o Natal! 🎄
-  return hoje.month == 8;
+  return hoje.month == 12;
 }
