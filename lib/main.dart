@@ -4631,7 +4631,6 @@ class GraficoPizza extends CustomPainter {
   }
 }
 
-// =======================================================
 // NOVA TELA: CARTÃO (AGRUPA CONTAS E PARCELAS EM ABAS) 💳
 // =======================================================
 class TelaCartao extends StatelessWidget {
