@@ -20,6 +20,7 @@ dependencies:
   upgrader: ^13.7.0
   upgrade: ^0.0.8
   local_auth: ^2.3.0
+  local_auth_web: any      # 👈 ADICIONE ESTA LINHA EXATAMENTE AQUI!
 
 dev_dependencies:
   flutter_test:

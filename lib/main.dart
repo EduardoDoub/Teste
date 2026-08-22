@@ -257,7 +257,6 @@ void abrirConfiguracoes(BuildContext context) {
                   );
                 },
               ),
-              // 👇 NOVO INTERRUPTOR DE EFEITOS (NEVE) 👇
             ],
           ),
           actions: [
@@ -273,6 +272,10 @@ void abrirConfiguracoes(BuildContext context) {
 // INÍCIO DA TELA DE LOGIN ANIMADA DEFINITIVA 🎬
 // =======================================================
 
+// =======================================================
+// INÍCIO DA TELA DE LOGIN ESTILO NETFLIX COM BIOMETRIA WEB 🎬
+// =======================================================
+
 class TelaLogin extends StatefulWidget {
   const TelaLogin({super.key});
 
@@ -285,79 +288,66 @@ class _TelaLoginState extends State<TelaLogin> {
   bool _mostrarDoub = false;
   bool _mostrarFinancas = false;
   bool _moverParaCima = false;
-  bool _mostrarRestoDaTela = false;
+  bool _mostrarBotaoCofre = false;
+
+  // 🔐 CONTROLE DO ESTILO NETFLIX (Porta da Família)
+  bool _familiaDesbloqueada = false;
 
   @override
   void initState() {
     super.initState();
     Future.microtask(() => _injetarConfiguracoesIniciaisBanco());
-
     _iniciarAnimacaoCinema();
   }
 
   void _iniciarAnimacaoCinema() async {
-    // Cena 1: O "OUB" começa a deslizar para formar o DOUB
     await Future.delayed(const Duration(milliseconds: 200));
     if (mounted) setState(() => _mostrarDoub = true);
 
-    // Cena 2: ESPERA o DOUB terminar de formar completamente, e SÓ ENTÃO o Finanças desce!
     await Future.delayed(const Duration(milliseconds: 1600));
     if (mounted) setState(() => _mostrarFinancas = true);
 
-    // Cena 3: ESPERA o Finanças terminar de descer, e SÓ ENTÃO tudo vai pro topo!
     await Future.delayed(const Duration(milliseconds: 1000));
     if (mounted) setState(() => _moverParaCima = true);
 
-    // Cena 4: Revela os botões de quem está acessando
     await Future.delayed(const Duration(milliseconds: 800));
-    if (mounted) setState(() => _mostrarRestoDaTela = true);
+    if (mounted) setState(() => _mostrarBotaoCofre = true);
   }
 
-// 👇 A FUNÇÃO QUE DECIDE: DIGITAL OU SENHA?
-  void _entrarComBiometriaOuSenha(BuildContext context, String usuario) async {
-    // 1. O usuário ativou nas configurações?
+  // 👇 1. A PORTA DA FAMÍLIA (O Cadeado Principal)
+  void _desbloquearFamilia(BuildContext context) async {
+    // 1. Tenta acionar o leitor do celular pelo Navegador/PWA!
     if (appUsaBiometria.value) {
       final LocalAuthentication auth = LocalAuthentication();
-
       try {
-        // 2. O aparelho suporta biometria? (No PC isso dá falso e ele pula pra senha)
         bool hasSupport = await auth.isDeviceSupported();
-        bool canCheck = await auth.canCheckBiometrics;
-
-        if (hasSupport && canCheck) {
-          // 3. Puxa a tela preta pedindo a digital!
+        if (hasSupport) {
           bool autenticado = await auth.authenticate(
-            localizedReason: 'Use sua digital para entrar como $usuario',
+            localizedReason: 'Desbloqueie o cofre da família DOUB',
             options: const AuthenticationOptions(
               stickyAuth: true,
-              biometricOnly:
-                  false, // Permite usar o PIN do celular se a digital falhar
+              biometricOnly: false, // Permite PIN se a digital falhar
             ),
           );
 
           if (autenticado) {
-            if (!context.mounted) return;
-            // 4. Passou na digital! Entra no app direto, sem pedir senha do sistema!
-            Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(
-                    builder: (context) =>
-                        TelaNavegacao(usuarioLogado: usuario)));
-            return; // 👈 Mata a função aqui pra ele não abrir o dialog de senha
+            // Acesso liberado pela digital! Revela a tela de Perfis!
+            if (mounted) setState(() => _familiaDesbloqueada = true);
+            return;
           }
         }
       } catch (e) {
-        debugPrint("Biometria ignorada ou falhou: $e");
+        debugPrint("Biometria ignorada ou falhou na Web: $e");
       }
     }
 
-    // 5. SE DEU TUDO ERRADO, ABRE NO PC, OU A PESSOA CANCELOU A DIGITAL: Abre a senha normal!
+    // 2. Se a biometria falhar, pede a SENHA DA FAMÍLIA
     if (!context.mounted) return;
-    _abrirDialogSenha(context, usuario);
+    _abrirDialogSenhaFamilia(context);
   }
 
-  // --- SUAS FUNÇÕES DE SENHA CONTINUAM AQUI ---
-  void _abrirDialogSenha(BuildContext context, String usuario) {
+  // 👇 A SENHA DA FAMÍLIA (Testa a senha do Eduardo como mestre temporário)
+  void _abrirDialogSenhaFamilia(BuildContext context) {
     final TextEditingController senhaController = TextEditingController();
     bool senhaIncorreta = false;
     bool mostrarSenha = false;
@@ -366,49 +356,37 @@ class _TelaLoginState extends State<TelaLogin> {
       context: context,
       builder: (context) {
         return StatefulBuilder(builder: (context, setStateDialog) {
-          void tentarLogin() async {
+          void tentarDesbloquear() async {
             var doc = await FirebaseFirestore.instance
                 .collection('usuarios')
-                .doc(usuario)
+                .doc('Eduardo') // Usando Eduardo como Senha Mestre da Família
                 .get();
-            // ignore: use_build_context_synchronously
-            if (!context.mounted) {
-              return;
-            } // 👈 Cinto de segurança! (O Linter vai amar isso)
+            if (!context.mounted) return;
+
             if (doc.exists && doc.data()!['senha'] == senhaController.text) {
               Navigator.pop(context);
-              Navigator.pushReplacement(
-                  context,
-                  MaterialPageRoute(
-                      builder: (context) =>
-                          TelaNavegacao(usuarioLogado: usuario)));
+              // A Mágica! Abre a escolha de perfis!
+              setState(() => _familiaDesbloqueada = true);
             } else {
-              setStateDialog(() {
-                senhaIncorreta = true;
-              });
+              setStateDialog(() => senhaIncorreta = true);
             }
-          }
-
-          void abrirRecuperacao() {
-            Navigator.pop(context);
-            _abrirDialogRecuperacao(context, usuario);
           }
 
           return AlertDialog(
             shape:
                 RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-            title: Text('Olá, $usuario!', textAlign: TextAlign.center),
+            title: const Text('Família DOUB', textAlign: TextAlign.center),
             content: Column(mainAxisSize: MainAxisSize.min, children: [
-              const Text('Digite sua senha de acesso:',
+              const Text('Digite a senha da família para abrir:',
                   style: TextStyle(color: Colors.grey)),
               const SizedBox(height: 15),
               TextField(
                   controller: senhaController,
                   obscureText: !mostrarSenha,
                   textInputAction: TextInputAction.done,
-                  onSubmitted: (valor) => tentarLogin(),
+                  onSubmitted: (_) => tentarDesbloquear(),
                   decoration: InputDecoration(
-                      labelText: 'Senha',
+                      labelText: 'Senha da Família',
                       border: const OutlineInputBorder(),
                       prefixIcon: const Icon(Icons.lock),
                       suffixIcon: IconButton(
@@ -417,18 +395,10 @@ class _TelaLoginState extends State<TelaLogin> {
                                 ? Icons.visibility
                                 : Icons.visibility_off,
                             color: Colors.grey),
-                        onPressed: () {
-                          setStateDialog(() {
-                            mostrarSenha = !mostrarSenha;
-                          });
-                        },
+                        onPressed: () =>
+                            setStateDialog(() => mostrarSenha = !mostrarSenha),
                       ),
                       errorText: senhaIncorreta ? 'Senha incorreta!' : null)),
-              const SizedBox(height: 10),
-              TextButton(
-                  onPressed: abrirRecuperacao,
-                  child: const Text('Esqueci ou Mudar Senha',
-                      style: TextStyle(fontSize: 12, color: Colors.blue)))
             ]),
             actions: [
               TextButton(
@@ -438,8 +408,8 @@ class _TelaLoginState extends State<TelaLogin> {
               ElevatedButton(
                   style:
                       ElevatedButton.styleFrom(backgroundColor: Colors.green),
-                  onPressed: tentarLogin,
-                  child: const Text('Entrar',
+                  onPressed: tentarDesbloquear,
+                  child: const Text('Desbloquear',
                       style: TextStyle(color: Colors.white)))
             ],
           );
@@ -448,79 +418,14 @@ class _TelaLoginState extends State<TelaLogin> {
     );
   }
 
-  void _abrirDialogRecuperacao(BuildContext context, String usuario) {
-    final TextEditingController codigoController = TextEditingController();
-    final TextEditingController novaSenhaController = TextEditingController();
-    bool codigoIncorreto = false;
-
-    showDialog(
-        context: context,
-        builder: (ctx) {
-          return StatefulBuilder(builder: (context, setStateDialog) {
-            void salvarNovaSenha() async {
-              var doc = await FirebaseFirestore.instance
-                  .collection('usuarios')
-                  .doc(usuario)
-                  .get();
-              if (doc.exists &&
-                  doc.data()!['codigo'] == codigoController.text &&
-                  novaSenhaController.text.isNotEmpty) {
-                await doc.reference.update({'senha': novaSenhaController.text});
-                // ignore: use_build_context_synchronously
-                if (!context.mounted) {
-                  return;
-                } // 👈 Cinto de segurança! (O Linter vai amar isso)
-                Navigator.pop(ctx);
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                    content: Text('Senha alterada com sucesso!'),
-                    backgroundColor: Colors.green));
-              } else {
-                setStateDialog(() {
-                  codigoIncorreto = true;
-                });
-              }
-            }
-
-            return AlertDialog(
-              title: const Text('Mudar Senha'),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Text('Digite seu código de segurança:',
-                      style: TextStyle(fontSize: 12, color: Colors.grey)),
-                  const SizedBox(height: 10),
-                  TextField(
-                      controller: codigoController,
-                      obscureText: true,
-                      decoration: InputDecoration(
-                          labelText: 'Código Secreto',
-                          errorText:
-                              codigoIncorreto ? 'Código inválido!' : null)),
-                  const SizedBox(height: 15),
-                  TextField(
-                      controller: novaSenhaController,
-                      decoration:
-                          const InputDecoration(labelText: 'Criar Nova Senha')),
-                ],
-              ),
-              actions: [
-                TextButton(
-                    onPressed: () => Navigator.pop(ctx),
-                    child: const Text('Cancelar')),
-                ElevatedButton(
-                    style:
-                        ElevatedButton.styleFrom(backgroundColor: Colors.green),
-                    onPressed: salvarNovaSenha,
-                    child: const Text('Salvar',
-                        style: TextStyle(color: Colors.white)))
-              ],
-            );
-          });
-        });
+  // 👇 2. ENTRADA DIRETA NOS PERFIS (Sem pedir senha, estilo Netflix!)
+  void _entrarNoPerfil(BuildContext context, String usuario) {
+    Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+            builder: (context) => TelaNavegacao(usuarioLogado: usuario)));
   }
 
-  // --- O PALCO DA ANIMAÇÃO (INTERFACE) ---
-  // --- O PALCO DA ANIMAÇÃO (INTERFACE) ---
   @override
   Widget build(BuildContext context) {
     bool isDark = Theme.of(context).brightness == Brightness.dark;
@@ -528,219 +433,220 @@ class _TelaLoginState extends State<TelaLogin> {
 
     return Scaffold(
       backgroundColor: corFundo,
-      body: Stack(
-        children: [
-          // 📱 3. O SEU CÓDIGO ORIGINAL VEM AQUI, POR CIMA DA NEVE!
-          SingleChildScrollView(
-            // 👇 Trava a altura para ocupar a tela inteira (descontando o rodapé)
-            child: SizedBox(
-              height: MediaQuery.of(context).size.height - 80,
-              child: Column(
-                children: [
-                  // 1. O MOTOR DA SUBIDA (O espaço invisível que puxa tudo para cima)
-                  AnimatedContainer(
-                    duration: const Duration(milliseconds: 1000),
-                    curve: Curves.easeInOut,
-                    height: _moverParaCima
-                        ? 80
-                        : MediaQuery.of(context).size.height * 0.35,
-                  ),
-
-                  // 2. A DANÇA DOS NOMES (A prova de balas com Transform!)
-                  SizedBox(
-                    height: 120, // Altura do palco
-                    child: Stack(
-                      alignment: Alignment
-                          .center, // <- Centraliza os dois no eixo perfeito
-                      clipBehavior: Clip.none,
-                      children: [
-                        // --- A CAMADA DE TRÁS (Finanças) ---
-                        AnimatedContainer(
-                          duration: const Duration(milliseconds: 1000),
-                          curve: Curves.easeOutBack,
-                          transform: Matrix4.translationValues(
-                              0, _mostrarFinancas ? 35.0 : 0.0, 0),
-                          child: AnimatedOpacity(
-                            duration: const Duration(milliseconds: 800),
-                            opacity: _mostrarFinancas ? 1.0 : 0.0,
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Container(
-                                    width: 30,
-                                    height: 1.5,
-                                    color: const Color(0xffffffff)),
-                                const Padding(
-                                  padding:
-                                      EdgeInsets.symmetric(horizontal: 8.0),
-                                  child: Text(
-                                    'FINANÇAS',
-                                    style: TextStyle(
-                                      fontSize: 14,
-                                      color: Color(0xffffffff),
-                                      fontWeight: FontWeight.normal,
-                                      letterSpacing: 2,
-                                    ),
-                                  ),
-                                ),
-                                Container(
-                                    width: 30,
-                                    height: 1.5,
-                                    color: const Color(0xffffffff)),
-                              ],
-                            ),
-                          ),
-                        ),
-
-                        // --- A CAMADA DA FRENTE (DOUB - O Escudo) ---
-                        // --- A CAMADA DA FRENTE (DOUB - O Escudo) ---
-                        Container(
-                          height: 48,
-                          padding: const EdgeInsets.symmetric(horizontal: 20),
-                          alignment: Alignment.center,
-                          // 👇 1. O STACK AGORA ABRAÇA A ROW INTEIRA
-                          child: Stack(
-                            clipBehavior: Clip.none,
-                            children: [
-                              // 2. A PALAVRA (Desenhada primeiro, fica no fundo)
-                              Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  const Text('D',
-                                      style: TextStyle(
-                                          fontFamily: 'TabPearl',
-                                          fontSize: 35,
-                                          fontWeight: FontWeight.bold,
-                                          color: Colors.white)),
-                                  AnimatedContainer(
-                                    duration:
-                                        const Duration(milliseconds: 1500),
-                                    curve: Curves.easeOutQuart,
-                                    width: _mostrarDoub ? 105.0 : 0.0,
-                                    child: const ClipRect(
-                                      child: OverflowBox(
-                                        alignment: Alignment.centerLeft,
-                                        maxWidth: 105.0,
-                                        minWidth: 105.0,
-                                        child: Text('OUB',
-                                            style: TextStyle(
-                                                fontFamily: 'TabPearl',
-                                                fontSize: 35,
-                                                fontWeight: FontWeight.bold,
-                                                color: Colors.white,
-                                                letterSpacing: 2),
-                                            maxLines: 1,
-                                            softWrap: false),
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-
-                              // 👇 3. O CHAPÉU (Desenhado por último, fica por cima de tudo)
-                              if (isNatal())
-                                Positioned(
-                                  top: -20, // Puxa pra cima da cabeça do D
-                                  left:
-                                      -25, // Joga ele certinho em cima do D (Ajuste se precisar!)
-                                  child: Image.asset(
-                                    'assets/imagens/chapeu_natal.png',
-                                    width: 55,
-                                    height: 55,
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  // 👇 2. A PRIMEIRA MOLA: Empurra os avatares pro centro
-                  const Spacer(),
-
-                  // 3. AVATARES QUE APARECEM NO FINAL
-                  AnimatedOpacity(
-                    duration: const Duration(milliseconds: 800),
-                    opacity: _mostrarRestoDaTela ? 1.0 : 0.0,
-                    child: Column(
-                      children: [
-                        // Retirei o espaço fixo gigante que tinha aqui!
-                        const Text('Quem está acessando?',
-                            style: TextStyle(fontSize: 16, color: Colors.grey)),
-                        const SizedBox(height: 30),
-
-                        // --- BOTOES DE AVATAR ---
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
+      body: SingleChildScrollView(
+        child: SizedBox(
+          height: MediaQuery.of(context).size.height - 80,
+          child: Column(
+            children: [
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 1000),
+                curve: Curves.easeInOut,
+                height: _moverParaCima
+                    ? 80
+                    : MediaQuery.of(context).size.height * 0.35,
+              ),
+              SizedBox(
+                height: 120,
+                child: Stack(
+                  alignment: Alignment.center,
+                  clipBehavior: Clip.none,
+                  children: [
+                    AnimatedContainer(
+                      duration: const Duration(milliseconds: 1000),
+                      curve: Curves.easeOutBack,
+                      transform: Matrix4.translationValues(
+                          0, _mostrarFinancas ? 35.0 : 0.0, 0),
+                      child: AnimatedOpacity(
+                        duration: const Duration(milliseconds: 800),
+                        opacity: _mostrarFinancas ? 1.0 : 0.0,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
                           children: [
-                            // --- EDUARDO ---
-                            GestureDetector(
-                                onTap: () => _entrarComBiometriaOuSenha(
-                                    context, 'Eduardo'),
-                                child: Column(children: [
-                                  Icon(Icons.person_outline,
-                                      size: 70,
-                                      color: isDark
-                                          ? Colors.white
-                                          : Colors.black87),
-                                  const SizedBox(height: 10),
-                                  Text('Eduardo',
-                                      style: TextStyle(
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.w500,
-                                          letterSpacing: 1,
-                                          color: isDark
-                                              ? Colors.white
-                                              : Colors.black))
-                                ])),
-
-                            const SizedBox(width: 40),
-
-                            // --- NAIUB ---
-                            GestureDetector(
-                                onTap: () => _entrarComBiometriaOuSenha(
-                                    context, 'Naiub'),
-                                child: Column(children: [
-                                  Icon(Icons.person_outline,
-                                      size: 70,
-                                      color: isDark
-                                          ? Colors.white
-                                          : Colors.black87),
-                                  const SizedBox(height: 10),
-                                  Text('Naiub',
-                                      style: TextStyle(
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.w500,
-                                          letterSpacing: 1,
-                                          color: isDark
-                                              ? Colors.white
-                                              : Colors.black))
-                                ])),
+                            Container(
+                                width: 30,
+                                height: 1.5,
+                                color: const Color(0xffffffff)),
+                            const Padding(
+                              padding: EdgeInsets.symmetric(horizontal: 8.0),
+                              child: Text(
+                                'FINANÇAS',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  color: Color(0xffffffff),
+                                  fontWeight: FontWeight.normal,
+                                  letterSpacing: 2,
+                                ),
+                              ),
+                            ),
+                            Container(
+                                width: 30,
+                                height: 1.5,
+                                color: const Color(0xffffffff)),
                           ],
                         ),
-                      ],
+                      ),
                     ),
-                  ),
-
-                  // 👇 3. A SEGUNDA MOLA: Preenche o espaço vazio até o rodapé
-                  const Spacer(flex: 2),
-                ],
+                    Container(
+                      height: 48,
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      alignment: Alignment.center,
+                      child: Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Text('D',
+                                  style: TextStyle(
+                                      fontFamily: 'TabPearl',
+                                      fontSize: 35,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.white)),
+                              AnimatedContainer(
+                                duration: const Duration(milliseconds: 1500),
+                                curve: Curves.easeOutQuart,
+                                width: _mostrarDoub ? 105.0 : 0.0,
+                                child: const ClipRect(
+                                  child: OverflowBox(
+                                    alignment: Alignment.centerLeft,
+                                    maxWidth: 105.0,
+                                    minWidth: 105.0,
+                                    child: Text('OUB',
+                                        style: TextStyle(
+                                            fontFamily: 'TabPearl',
+                                            fontSize: 35,
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.white,
+                                            letterSpacing: 2),
+                                        maxLines: 1,
+                                        softWrap: false),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          if (isNatal())
+                            Positioned(
+                              top: -20,
+                              left: -25,
+                              child: Image.asset(
+                                'assets/imagens/chapeu_natal.png',
+                                width: 55,
+                                height: 55,
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
+              const Spacer(),
+              AnimatedOpacity(
+                duration: const Duration(milliseconds: 800),
+                opacity: _mostrarBotaoCofre ? 1.0 : 0.0,
+                child: Column(
+                  children: [
+                    // 👇 MÁGICA: Se a família NÃO está desbloqueada, mostra o botão do Cofre
+                    if (!_familiaDesbloqueada) ...[
+                      const Text('Família DOUB',
+                          style: TextStyle(fontSize: 16, color: Colors.grey)),
+                      const SizedBox(height: 20),
+                      ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.green,
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 30, vertical: 15),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(30)),
+                        ),
+                        icon: const Icon(Icons.fingerprint,
+                            color: Colors.white, size: 28),
+                        label: const Text('Desbloquear Cofre',
+                            style: TextStyle(
+                                fontSize: 18,
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold)),
+                        onPressed: () => _desbloquearFamilia(context),
+                      ),
+                    ]
+                    // 👇 MÁGICA: Se a família FOI desbloqueada, revela a Tela Netflix!
+                    else ...[
+                      const Text('Quem está acessando?',
+                          style: TextStyle(
+                              fontSize: 18,
+                              color: Colors.green,
+                              fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 30),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          // --- PERFIL EDUARDO ---
+                          GestureDetector(
+                              onTap: () => _entrarNoPerfil(context, 'Eduardo'),
+                              child: Column(children: [
+                                Container(
+                                  padding: const EdgeInsets.all(15),
+                                  decoration: BoxDecoration(
+                                      color: Colors.blue.withValues(alpha: 0.1),
+                                      shape: BoxShape.circle,
+                                      border: Border.all(
+                                          color: Colors.blue, width: 2)),
+                                  child: const Icon(Icons.person,
+                                      size: 50, color: Colors.blue),
+                                ),
+                                const SizedBox(height: 10),
+                                Text('Eduardo',
+                                    style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.bold,
+                                        color: isDark
+                                            ? Colors.white
+                                            : Colors.black))
+                              ])),
+                          const SizedBox(width: 40),
+                          // --- PERFIL NAIUB ---
+                          GestureDetector(
+                              onTap: () => _entrarNoPerfil(context, 'Naiub'),
+                              child: Column(children: [
+                                Container(
+                                  padding: const EdgeInsets.all(15),
+                                  decoration: BoxDecoration(
+                                      color:
+                                          Colors.purple.withValues(alpha: 0.1),
+                                      shape: BoxShape.circle,
+                                      border: Border.all(
+                                          color: Colors.purple, width: 2)),
+                                  child: const Icon(Icons.person,
+                                      size: 50, color: Colors.purple),
+                                ),
+                                const SizedBox(height: 10),
+                                Text('Naiub',
+                                    style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.bold,
+                                        color: isDark
+                                            ? Colors.white
+                                            : Colors.black))
+                              ])),
+                        ],
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              const Spacer(flex: 2),
+            ],
           ),
-        ],
+        ),
       ),
-
-      // 4. RODAPÉ
       bottomNavigationBar: AnimatedOpacity(
         duration: const Duration(milliseconds: 800),
-        opacity: _mostrarRestoDaTela ? 1.0 : 0.0,
-        // 👇 TIRE QUALQUER 'const' QUE ESTIVER ANTES DO Padding OU DO Text!
+        opacity: _mostrarBotaoCofre ? 1.0 : 0.0,
         child: Padding(
           padding: const EdgeInsets.only(bottom: 20.0),
           child: Text(
-            'Versão 2.6\n© ${DateTime.now().year} DOUB. Todos os direitos reservados.',
+            'Versão 2.7 (Netflix)\n© ${DateTime.now().year} DOUB. Todos os direitos reservados.',
             textAlign: TextAlign.center,
             style: const TextStyle(
                 fontSize: 14.5,
@@ -752,6 +658,10 @@ class _TelaLoginState extends State<TelaLogin> {
     );
   }
 }
+
+// =======================================================
+// FIM DA TELA DE LOGIN ANIMADA ESTILO NETFLIX 🎬
+// =======================================================
 
 // =======================================================
 // FIM DA TELA DE LOGIN ANIMADA DEFINITIVA 🎬
