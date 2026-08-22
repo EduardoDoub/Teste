@@ -7,12 +7,21 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:universal_html/html.dart' as html;
 import 'dart:convert';
 import 'dart:math';
-import 'package:local_auth/local_auth.dart'; // 👈 Adicione lá nos imports
 
 final ValueNotifier<ThemeMode> appThemeMode = ValueNotifier(ThemeMode.dark);
 final ValueNotifier<double> appTextScale = ValueNotifier(1.0);
-final ValueNotifier<bool> appUsaBiometria =
-    ValueNotifier(false); // 👈 A CHAVE DA BIOMETRIA!
+final Map<int, IconData> mapaDeIcones = {
+  Icons.shopping_cart.codePoint: Icons.shopping_cart,
+  Icons.fastfood.codePoint: Icons.fastfood,
+  Icons.local_gas_station.codePoint: Icons.local_gas_station,
+  Icons.pets.codePoint: Icons.pets,
+  Icons.flight.codePoint: Icons.flight,
+  Icons.home.codePoint: Icons.home,
+  Icons.movie.codePoint: Icons.movie,
+  Icons.directions_car.codePoint: Icons.directions_car,
+  Icons.health_and_safety.codePoint: Icons.health_and_safety,
+  Icons.category.codePoint: Icons.category,
+};
 // MEMÓRIA CACHE DAS CATEGORIAS PARA DEIXAR O APP NA VELOCIDADE DA LUZ
 Map<String, Map<String, dynamic>> cacheCategoriasGeral = {};
 
@@ -71,7 +80,6 @@ void main() async {
   final isDark = prefs.getBool('isDark') ?? true;
   appThemeMode.value = isDark ? ThemeMode.dark : ThemeMode.light;
   appTextScale.value = prefs.getDouble('textScale') ?? 1.0;
-  appUsaBiometria.value = prefs.getBool('usaBiometria') ?? false;
 
   // 🚀 O APP ABRE AGORA MESMO, SEM ESPERAR O FIRESTORE!
   runApp(const MyApp());
@@ -79,13 +87,25 @@ void main() async {
 
 Future<void> _injetarConfiguracoesIniciaisBanco() async {
   try {
+    // 👇 1. CRIA A FAMÍLIA DOUB NO BANCO (A Porta da Casa)
+    var dbFamilias = FirebaseFirestore.instance.collection('familias');
+    var docDoub = await dbFamilias.doc('DOUB').get();
+    if (!docDoub.exists) {
+      await dbFamilias
+          .doc('DOUB')
+          .set({'senha': 'ADMIN123'}); // Senha da família
+    }
+
+    // 👇 2. CRIA OS USUÁRIOS (Os Quartos)
     var dbUsuarios = FirebaseFirestore.instance.collection('usuarios');
+
     var docEduardo = await dbUsuarios.doc('Eduardo').get();
     if (!docEduardo.exists) {
       await dbUsuarios
           .doc('Eduardo')
           .set({'senha': 'ADMIN123', 'codigo': '711@2709'});
     }
+
     var docNaiub = await dbUsuarios.doc('Naiub').get();
     if (!docNaiub.exists) {
       await dbUsuarios
@@ -93,6 +113,7 @@ Future<void> _injetarConfiguracoesIniciaisBanco() async {
           .set({'senha': 'ADMIN123', 'codigo': '713@2105'});
     }
 
+    // 👇 3. CRIA AS CATEGORIAS E SALVA NA MEMÓRIA RÁPIDA (Cache)
     var dbCats = FirebaseFirestore.instance.collection('categorias');
     var catsGet = await dbCats.limit(1).get();
     if (catsGet.docs.isEmpty) {
@@ -121,7 +142,7 @@ Future<void> _injetarConfiguracoesIniciaisBanco() async {
         'ativo': true
       });
     }
-    // 👇 CARREGA AS CATEGORIAS PARA A MEMÓRIA RAM DO CELULAR
+
     var catsGetCache = await dbCats.get();
     for (var doc in catsGetCache.docs) {
       cacheCategoriasGeral[doc.id] = doc.data();
@@ -236,27 +257,6 @@ void abrirConfiguracoes(BuildContext context) {
                   }),
               const SizedBox(height: 10),
               const Divider(),
-              ValueListenableBuilder<bool>(
-                valueListenable: appUsaBiometria,
-                builder: (context, usaBio, _) {
-                  return SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('Usar Biometria (Digital)',
-                        style: TextStyle(fontSize: 14)),
-
-                    value: usaBio,
-                    activeThumbColor:
-                        Colors.green, // 👈 Já com a correção do Linter!
-                    secondary:
-                        const Icon(Icons.fingerprint, color: Colors.green),
-                    onChanged: (bool valor) async {
-                      appUsaBiometria.value = valor;
-                      final prefs = await SharedPreferences.getInstance();
-                      prefs.setBool('usaBiometria', valor);
-                    },
-                  );
-                },
-              ),
             ],
           ),
           actions: [
@@ -269,44 +269,58 @@ void abrirConfiguracoes(BuildContext context) {
 }
 
 // =======================================================
-// INÍCIO DA TELA DE LOGIN ANIMADA DEFINITIVA 🎬
+// INÍCIO DA TELA DE LOGIN ESTILO NETFLIX (DIRETO NA TELA) 🎬
 // =======================================================
 
 // =======================================================
-// INÍCIO DA TELA DE LOGIN ESTILO NETFLIX COM BIOMETRIA WEB 🎬
+// INÍCIO DA TELA DE LOGIN ESTILO NETFLIX (BLINDADA CONTRA ERROS) 🎬
 // =======================================================
 
 class TelaLogin extends StatefulWidget {
-  const TelaLogin({super.key});
+  final bool manterDesbloqueado;
+
+  const TelaLogin({super.key, this.manterDesbloqueado = false});
 
   @override
   State<TelaLogin> createState() => _TelaLoginState();
 }
 
 class _TelaLoginState extends State<TelaLogin> {
-  // 🎬 VARIÁVEIS DA ANIMAÇÃO DE CINEMA
-  bool _mostrarDoub = false;
-  bool _mostrarFinancas = false;
-  bool _moverParaCima = false;
-  bool _mostrarBotaoCofre = false;
+  // 🎬 VARIÁVEIS DA ANIMAÇÃO
+  late bool _mostrarDoub = widget.manterDesbloqueado;
+  late bool _mostrarFinancas = widget.manterDesbloqueado;
+  late bool _moverParaCima = widget.manterDesbloqueado;
+  late bool _mostrarRestoDaTela = widget.manterDesbloqueado;
 
-  // 🔐 CONTROLE DO ESTILO NETFLIX (Porta da Família)
-  bool _familiaDesbloqueada = false;
+  // 🔐 CONTROLE DA FAMÍLIA E FORMULÁRIO
+  late bool _familiaDesbloqueada = widget.manterDesbloqueado;
+  String _nomeFamiliaAtual = '';
+
+  // Controladores do Formulário na Tela
+  final TextEditingController _usuarioCtrl = TextEditingController();
+  final TextEditingController _senhaCtrl = TextEditingController();
+  bool _mostrarSenha = false;
+  bool _loginIncorreto = false;
 
   @override
   void initState() {
     super.initState();
     Future.microtask(() => _injetarConfiguracoesIniciaisBanco());
-    _verificarCofreSalvo(); // 👈 Tenta abrir a porta sozinho!
-    _iniciarAnimacaoCinema();
+    _verificarFamiliaSalva();
+
+    if (!widget.manterDesbloqueado) {
+      _iniciarAnimacaoCinema();
+    }
   }
 
-  // 👇 MÁGICA 1: Olha a memória do navegador antes de pedir a senha!
-  void _verificarCofreSalvo() async {
+  void _verificarFamiliaSalva() async {
     final prefs = await SharedPreferences.getInstance();
-    bool cofreAberto = prefs.getBool('cofreAberto') ?? false;
-    if (cofreAberto && mounted) {
-      setState(() => _familiaDesbloqueada = true);
+    String? familia = prefs.getString('familiaAberta');
+    if (familia != null && familia.isNotEmpty && mounted) {
+      setState(() {
+        _nomeFamiliaAtual = familia;
+        _familiaDesbloqueada = true;
+      });
     }
   }
 
@@ -321,118 +335,38 @@ class _TelaLoginState extends State<TelaLogin> {
     if (mounted) setState(() => _moverParaCima = true);
 
     await Future.delayed(const Duration(milliseconds: 800));
-    if (mounted) setState(() => _mostrarBotaoCofre = true);
+    if (mounted) setState(() => _mostrarRestoDaTela = true);
   }
 
-  // 👇 1. A PORTA DA FAMÍLIA (O Cadeado Principal)
-  void _desbloquearFamilia(BuildContext context) async {
-    // 1. Tenta acionar o leitor do celular pelo Navegador/PWA!
-    if (appUsaBiometria.value) {
-      final LocalAuthentication auth = LocalAuthentication();
-      try {
-        bool hasSupport = await auth.isDeviceSupported();
-        if (hasSupport) {
-          bool autenticado = await auth.authenticate(
-            localizedReason: 'Desbloqueie o cofre da família DOUB',
-            options: const AuthenticationOptions(
-              stickyAuth: true,
-              biometricOnly: false, // Permite PIN se a digital falhar
-            ),
-          );
+  void _tentarLoginDireto() async {
+    // 👈 Mágica: Abaixa o teclado do celular ao apertar Enter
+    FocusScope.of(context).unfocus();
 
-          if (autenticado) {
-            // Acesso liberado pela digital! Revela a tela de Perfis!
-            if (mounted) setState(() => _familiaDesbloqueada = true);
-            return;
-          }
-        }
-      } catch (e) {
-        debugPrint("Biometria ignorada ou falhou na Web: $e");
-      }
+    String familiaDigitada = _usuarioCtrl.text.trim().toUpperCase();
+    if (familiaDigitada.isEmpty) return;
+
+    var doc = await FirebaseFirestore.instance
+        .collection('familias')
+        .doc(familiaDigitada)
+        .get();
+
+    if (!mounted) return;
+
+    if (doc.exists && doc.data()!['senha'] == _senhaCtrl.text) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('familiaAberta', familiaDigitada);
+
+      setState(() {
+        _nomeFamiliaAtual = familiaDigitada;
+        _familiaDesbloqueada = true;
+        _loginIncorreto = false;
+      });
+    } else {
+      setState(() => _loginIncorreto = true);
     }
-
-    // 2. Se a biometria falhar, pede a SENHA DA FAMÍLIA
-    if (!context.mounted) return;
-    _abrirDialogSenhaFamilia(context);
   }
 
-  // 👇 A SENHA DA FAMÍLIA (Testa a senha do Eduardo como mestre temporário)
-  void _abrirDialogSenhaFamilia(BuildContext context) {
-    final TextEditingController senhaController = TextEditingController();
-    bool senhaIncorreta = false;
-    bool mostrarSenha = false;
-
-    showDialog(
-      context: context,
-      builder: (context) {
-        return StatefulBuilder(builder: (context, setStateDialog) {
-          void tentarDesbloquear() async {
-            var doc = await FirebaseFirestore.instance
-                .collection('usuarios')
-                .doc('Eduardo') // Usando Eduardo como Senha Mestre da Família
-                .get();
-            if (!context.mounted) return;
-
-            if (doc.exists && doc.data()!['senha'] == senhaController.text) {
-              // 👇 MÁGICA 2: Salva para sempre no celular!
-              final prefs = await SharedPreferences.getInstance();
-              await prefs.setBool('cofreAberto', true);
-
-              Navigator.pop(context);
-              setState(() => _familiaDesbloqueada = true);
-            } else {
-              setStateDialog(() => senhaIncorreta = true);
-            }
-          }
-
-          return AlertDialog(
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-            title: const Text('Família DOUB', textAlign: TextAlign.center),
-            content: Column(mainAxisSize: MainAxisSize.min, children: [
-              const Text('Digite a senha da família para abrir:',
-                  style: TextStyle(color: Colors.grey)),
-              const SizedBox(height: 15),
-              TextField(
-                  controller: senhaController,
-                  obscureText: !mostrarSenha,
-                  textInputAction: TextInputAction.done,
-                  onSubmitted: (_) => tentarDesbloquear(),
-                  decoration: InputDecoration(
-                      labelText: 'Senha da Família',
-                      border: const OutlineInputBorder(),
-                      prefixIcon: const Icon(Icons.lock),
-                      suffixIcon: IconButton(
-                        icon: Icon(
-                            mostrarSenha
-                                ? Icons.visibility
-                                : Icons.visibility_off,
-                            color: Colors.grey),
-                        onPressed: () =>
-                            setStateDialog(() => mostrarSenha = !mostrarSenha),
-                      ),
-                      errorText: senhaIncorreta ? 'Senha incorreta!' : null)),
-            ]),
-            actions: [
-              TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('Cancelar',
-                      style: TextStyle(color: Colors.grey))),
-              ElevatedButton(
-                  style:
-                      ElevatedButton.styleFrom(backgroundColor: Colors.green),
-                  onPressed: tentarDesbloquear,
-                  child: const Text('Desbloquear',
-                      style: TextStyle(color: Colors.white)))
-            ],
-          );
-        });
-      },
-    );
-  }
-
-  // 👇 2. ENTRADA DIRETA NOS PERFIS (Sem pedir senha, estilo Netflix!)
-  void _entrarNoPerfil(BuildContext context, String usuario) {
+  void _entrarNoPerfilDireto(BuildContext context, String usuario) {
     Navigator.pushReplacement(
         context,
         MaterialPageRoute(
@@ -446,243 +380,344 @@ class _TelaLoginState extends State<TelaLogin> {
 
     return Scaffold(
       backgroundColor: corFundo,
-      body: SingleChildScrollView(
-        child: SizedBox(
-          height: MediaQuery.of(context).size.height - 80,
-          child: Column(
-            children: [
-              AnimatedContainer(
-                duration: const Duration(milliseconds: 1000),
-                curve: Curves.easeInOut,
-                height: _moverParaCima
-                    ? 80
-                    : MediaQuery.of(context).size.height * 0.35,
+      // 👇 A MÁGICA CONTRA A TELA ZEBRADA: LayoutBuilder + IntrinsicHeight
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          return SingleChildScrollView(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                minHeight: constraints
+                    .maxHeight, // 👈 Força a altura mínima pra tela toda
               ),
-              SizedBox(
-                height: 120,
-                child: Stack(
-                  alignment: Alignment.center,
-                  clipBehavior: Clip.none,
+              child: IntrinsicHeight(
+                // 👈 Deixa a tela crescer como elástico se o teclado subir
+                child: Column(
                   children: [
+                    // O Motor da Animação (Reduzido para 20% para caber o form!)
                     AnimatedContainer(
                       duration: const Duration(milliseconds: 1000),
-                      curve: Curves.easeOutBack,
-                      transform: Matrix4.translationValues(
-                          0, _mostrarFinancas ? 35.0 : 0.0, 0),
-                      child: AnimatedOpacity(
-                        duration: const Duration(milliseconds: 800),
-                        opacity: _mostrarFinancas ? 1.0 : 0.0,
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Container(
-                                width: 30,
-                                height: 1.5,
-                                color: const Color(0xffffffff)),
-                            const Padding(
-                              padding: EdgeInsets.symmetric(horizontal: 8.0),
-                              child: Text(
-                                'FINANÇAS',
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  color: Color(0xffffffff),
-                                  fontWeight: FontWeight.normal,
-                                  letterSpacing: 2,
-                                ),
-                              ),
-                            ),
-                            Container(
-                                width: 30,
-                                height: 1.5,
-                                color: const Color(0xffffffff)),
-                          ],
-                        ),
-                      ),
+                      curve: Curves.easeInOut,
+                      height:
+                          _moverParaCima ? 80 : constraints.maxHeight * 0.38,
                     ),
-                    Container(
-                      height: 48,
-                      padding: const EdgeInsets.symmetric(horizontal: 20),
-                      alignment: Alignment.center,
+                    SizedBox(
+                      height: 120,
                       child: Stack(
+                        alignment: Alignment.center,
                         clipBehavior: Clip.none,
                         children: [
-                          Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Text('D',
-                                  style: TextStyle(
-                                      fontFamily: 'TabPearl',
-                                      fontSize: 35,
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.white)),
-                              AnimatedContainer(
-                                duration: const Duration(milliseconds: 1500),
-                                curve: Curves.easeOutQuart,
-                                width: _mostrarDoub ? 105.0 : 0.0,
-                                child: const ClipRect(
-                                  child: OverflowBox(
-                                    alignment: Alignment.centerLeft,
-                                    maxWidth: 105.0,
-                                    minWidth: 105.0,
-                                    child: Text('OUB',
+                          AnimatedContainer(
+                            duration: const Duration(milliseconds: 1000),
+                            curve: Curves.easeOutBack,
+                            transform: Matrix4.translationValues(
+                                0, _mostrarFinancas ? 35.0 : 0.0, 0),
+                            child: AnimatedOpacity(
+                              duration: const Duration(milliseconds: 800),
+                              opacity: _mostrarFinancas ? 1.0 : 0.0,
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Container(
+                                      width: 30,
+                                      height: 1.5,
+                                      color: Colors.white),
+                                  const Padding(
+                                    padding:
+                                        EdgeInsets.symmetric(horizontal: 8.0),
+                                    child: Text('FINANÇAS',
+                                        style: TextStyle(
+                                            fontSize: 14,
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.normal,
+                                            letterSpacing: 2)),
+                                  ),
+                                  Container(
+                                      width: 30,
+                                      height: 1.5,
+                                      color: Colors.white),
+                                ],
+                              ),
+                            ),
+                          ),
+                          Container(
+                            height: 48,
+                            padding: const EdgeInsets.symmetric(horizontal: 20),
+                            alignment: Alignment.center,
+                            child: Stack(
+                              clipBehavior: Clip.none,
+                              children: [
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Text('D',
                                         style: TextStyle(
                                             fontFamily: 'TabPearl',
                                             fontSize: 35,
                                             fontWeight: FontWeight.bold,
-                                            color: Colors.white,
-                                            letterSpacing: 2),
-                                        maxLines: 1,
-                                        softWrap: false),
-                                  ),
+                                            color: Colors.white)),
+                                    AnimatedContainer(
+                                      duration:
+                                          const Duration(milliseconds: 1500),
+                                      curve: Curves.easeOutQuart,
+                                      width: _mostrarDoub ? 105.0 : 0.0,
+                                      child: const ClipRect(
+                                        child: OverflowBox(
+                                          alignment: Alignment.centerLeft,
+                                          maxWidth: 105.0,
+                                          minWidth: 105.0,
+                                          child: Text('OUB',
+                                              style: TextStyle(
+                                                  fontFamily: 'TabPearl',
+                                                  fontSize: 35,
+                                                  fontWeight: FontWeight.bold,
+                                                  color: Colors.white,
+                                                  letterSpacing: 2),
+                                              maxLines: 1,
+                                              softWrap: false),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                              ),
-                            ],
-                          ),
-                          if (isNatal())
-                            Positioned(
-                              top: -20,
-                              left: -25,
-                              child: Image.asset(
-                                'assets/imagens/chapeu_natal.png',
-                                width: 55,
-                                height: 55,
-                              ),
+                                if (isNatal())
+                                  Positioned(
+                                      top: -20,
+                                      left: -25,
+                                      child: Image.asset(
+                                          'assets/imagens/chapeu_natal.png',
+                                          width: 55,
+                                          height: 55)),
+                              ],
                             ),
+                          ),
                         ],
+                      ),
+                    ),
+                    const Spacer(),
+
+                    // A REVELAÇÃO DO CONTEÚDO
+                    AnimatedOpacity(
+                      duration: const Duration(milliseconds: 800),
+                      opacity: _mostrarRestoDaTela ? 1.0 : 0.0,
+                      child: Column(
+                        children: [
+                          // =======================================================
+                          // ESTADO 1: FORMULÁRIO DIRETO NA TELA (Sem pop-up)
+                          // =======================================================
+                          if (!_familiaDesbloqueada) ...[
+                            Padding(
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 35),
+                              child: Column(
+                                children: [
+                                  const SizedBox(height: 20),
+                                  TextField(
+                                    controller: _usuarioCtrl,
+                                    textCapitalization:
+                                        TextCapitalization.characters,
+                                    decoration: InputDecoration(
+                                      labelText: 'Usuário',
+                                      filled: true,
+                                      fillColor: isDark
+                                          ? Colors.grey.shade900
+                                          : Colors.white,
+                                      border: OutlineInputBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(12),
+                                          borderSide: BorderSide.none),
+                                      prefixIcon: const Icon(Icons.group),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 15),
+                                  TextField(
+                                    controller: _senhaCtrl,
+                                    obscureText: !_mostrarSenha,
+                                    onSubmitted: (_) => _tentarLoginDireto(),
+                                    decoration: InputDecoration(
+                                      labelText: 'Senha',
+                                      filled: true,
+                                      fillColor: isDark
+                                          ? Colors.grey.shade900
+                                          : Colors.white,
+                                      border: OutlineInputBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(12),
+                                          borderSide: BorderSide.none),
+                                      prefixIcon: const Icon(Icons.lock),
+                                      suffixIcon: IconButton(
+                                        icon: Icon(
+                                            _mostrarSenha
+                                                ? Icons.visibility
+                                                : Icons.visibility_off,
+                                            color: Colors.grey),
+                                        onPressed: () => setState(() =>
+                                            _mostrarSenha = !_mostrarSenha),
+                                      ),
+                                    ),
+                                  ),
+                                  if (_loginIncorreto) ...[
+                                    const SizedBox(height: 10),
+                                    const Text('Usuário ou senha incorretos!',
+                                        style: TextStyle(
+                                            color: Colors.red,
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 13)),
+                                  ],
+                                  const SizedBox(height: 25),
+                                  SizedBox(
+                                    width: double.infinity,
+                                    height: 50,
+                                    child: ElevatedButton(
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: Color(0xff235224),
+                                        shape: RoundedRectangleBorder(
+                                            borderRadius:
+                                                BorderRadius.circular(12)),
+                                      ),
+                                      onPressed: _tentarLoginDireto,
+                                      child: const Text('ENTRAR',
+                                          style: TextStyle(
+                                              fontSize: 16,
+                                              fontWeight: FontWeight.normal,
+                                              color: Colors.white,
+                                              letterSpacing: 1.5)),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            )
+                          ]
+                          // =======================================================
+                          // ESTADO 2: FAMÍLIA LOGADA (Mostra os Avatares Direto!)
+                          // =======================================================
+                          else ...[
+                            Text('Família $_nomeFamiliaAtual',
+                                style: const TextStyle(
+                                    fontSize: 18,
+                                    color: Colors.green,
+                                    fontWeight: FontWeight.bold)),
+                            const SizedBox(height: 30),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                // --- PERFIL EDUARDO ---
+                                GestureDetector(
+                                    onTap: () => _entrarNoPerfilDireto(
+                                        context, 'Eduardo'),
+                                    child: Column(children: [
+                                      Container(
+                                        padding: const EdgeInsets.all(15),
+                                        decoration: BoxDecoration(
+                                            color: Colors.blue
+                                                .withValues(alpha: 0.1),
+                                            shape: BoxShape.circle,
+                                            border: Border.all(
+                                                color: Colors.blue, width: 2)),
+                                        child: const Icon(Icons.person,
+                                            size: 50, color: Colors.blue),
+                                      ),
+                                      const SizedBox(height: 10),
+                                      Text('Eduardo',
+                                          style: TextStyle(
+                                              fontSize: 16,
+                                              fontWeight: FontWeight.bold,
+                                              color: isDark
+                                                  ? Colors.white
+                                                  : Colors.black))
+                                    ])),
+                                const SizedBox(width: 40),
+                                // --- PERFIL NAIUB ---
+                                GestureDetector(
+                                    onTap: () =>
+                                        _entrarNoPerfilDireto(context, 'Naiub'),
+                                    child: Column(children: [
+                                      Container(
+                                        padding: const EdgeInsets.all(15),
+                                        decoration: BoxDecoration(
+                                            color: Colors.purple
+                                                .withValues(alpha: 0.1),
+                                            shape: BoxShape.circle,
+                                            border: Border.all(
+                                                color: Colors.purple,
+                                                width: 2)),
+                                        child: const Icon(Icons.person,
+                                            size: 50, color: Colors.purple),
+                                      ),
+                                      const SizedBox(height: 10),
+                                      Text('Naiub',
+                                          style: TextStyle(
+                                              fontSize: 16,
+                                              fontWeight: FontWeight.bold,
+                                              color: isDark
+                                                  ? Colors.white
+                                                  : Colors.black))
+                                    ])),
+                              ],
+                            ),
+                            const SizedBox(height: 30),
+                            TextButton(
+                              onPressed: () async {
+                                final prefs =
+                                    await SharedPreferences.getInstance();
+                                await prefs.remove('familiaAberta');
+                                setState(() {
+                                  _usuarioCtrl.clear();
+                                  _senhaCtrl.clear();
+                                  _familiaDesbloqueada = false;
+                                  _nomeFamiliaAtual = '';
+                                });
+                              },
+                              child: const Text('Sair da Família',
+                                  style: TextStyle(
+                                      color: Colors.grey, fontSize: 15)),
+                            )
+                          ],
+                        ],
+                      ),
+                    ),
+                    const Spacer(flex: 2),
+
+                    // O RODAPÉ VEIO PARA DENTRO DA ÁREA FLEXÍVEL
+                    AnimatedOpacity(
+                      duration: const Duration(milliseconds: 800),
+                      opacity: _mostrarRestoDaTela ? 1.0 : 0.0,
+                      child: Padding(
+                        padding: const EdgeInsets.only(bottom: 20.0),
+                        child: Text(
+                          'Versão 2.7(.3)\n© ${DateTime.now().year} DOUB. Todos os direitos reservados.',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                              fontSize: 14.5,
+                              color: Color(0xffcdcaca),
+                              fontWeight: FontWeight.w500),
+                        ),
                       ),
                     ),
                   ],
                 ),
               ),
-              const Spacer(),
-              AnimatedOpacity(
-                duration: const Duration(milliseconds: 800),
-                opacity: _mostrarBotaoCofre ? 1.0 : 0.0,
-                child: Column(
-                  children: [
-                    // 👇 MÁGICA: Se a família NÃO está desbloqueada, mostra o botão do Cofre
-                    if (!_familiaDesbloqueada) ...[
-                      const Text('Família DOUB',
-                          style: TextStyle(fontSize: 16, color: Colors.grey)),
-                      const SizedBox(height: 20),
-                      ElevatedButton.icon(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.green,
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 30, vertical: 15),
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(30)),
-                        ),
-                        icon: const Icon(Icons.fingerprint,
-                            color: Colors.white, size: 28),
-                        label: const Text('Desbloquear Cofre',
-                            style: TextStyle(
-                                fontSize: 18,
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold)),
-                        onPressed: () => _desbloquearFamilia(context),
-                      ),
-                    ]
-                    // 👇 MÁGICA: Se a família FOI desbloqueada, revela a Tela Netflix!
-                    else ...[
-                      const Text('Quem está acessando?',
-                          style: TextStyle(
-                              fontSize: 18,
-                              color: Colors.green,
-                              fontWeight: FontWeight.bold)),
-                      const SizedBox(height: 30),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          // --- PERFIL EDUARDO ---
-                          GestureDetector(
-                              onTap: () => _entrarNoPerfil(context, 'Eduardo'),
-                              child: Column(children: [
-                                Container(
-                                  padding: const EdgeInsets.all(15),
-                                  decoration: BoxDecoration(
-                                      color: Colors.blue.withValues(alpha: 0.1),
-                                      shape: BoxShape.circle,
-                                      border: Border.all(
-                                          color: Colors.blue, width: 2)),
-                                  child: const Icon(Icons.person,
-                                      size: 50, color: Colors.blue),
-                                ),
-                                const SizedBox(height: 10),
-                                Text('Eduardo',
-                                    style: TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.bold,
-                                        color: isDark
-                                            ? Colors.white
-                                            : Colors.black))
-                              ])),
-                          const SizedBox(width: 40),
-                          // --- PERFIL NAIUB ---
-                          GestureDetector(
-                              onTap: () => _entrarNoPerfil(context, 'Naiub'),
-                              child: Column(children: [
-                                Container(
-                                  padding: const EdgeInsets.all(15),
-                                  decoration: BoxDecoration(
-                                      color:
-                                          Colors.purple.withValues(alpha: 0.1),
-                                      shape: BoxShape.circle,
-                                      border: Border.all(
-                                          color: Colors.purple, width: 2)),
-                                  child: const Icon(Icons.person,
-                                      size: 50, color: Colors.purple),
-                                ),
-                                const SizedBox(height: 10),
-                                Text('Naiub',
-                                    style: TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.bold,
-                                        color: isDark
-                                            ? Colors.white
-                                            : Colors.black))
-                              ])),
-                        ],
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-              const Spacer(flex: 2),
-            ],
-          ),
-        ),
-      ),
-      bottomNavigationBar: AnimatedOpacity(
-        duration: const Duration(milliseconds: 800),
-        opacity: _mostrarBotaoCofre ? 1.0 : 0.0,
-        child: Padding(
-          padding: const EdgeInsets.only(bottom: 20.0),
-          child: Text(
-            'Versão 2.7(.2)\n© ${DateTime.now().year} DOUB. Todos os direitos reservados.',
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-                fontSize: 14.5,
-                color: Color(0xffcdcaca),
-                fontWeight: FontWeight.w500),
-          ),
-        ),
+            ),
+          );
+        },
       ),
     );
   }
 }
 
 // =======================================================
-// FIM DA TELA DE LOGIN ANIMADA ESTILO NETFLIX 🎬
+// FIM DA TELA DE LOGIN 🎬
 // =======================================================
 
 // =======================================================
-// FIM DA TELA DE LOGIN ANIMADA DEFINITIVA 🎬
+// FIM DA TELA DE LOGIN 🎬
 // =======================================================
 
 void sairDoUsuario(BuildContext context) async {
   Navigator.pushReplacement(
-      context, MaterialPageRoute(builder: (context) => const TelaLogin()));
+      context,
+      MaterialPageRoute(
+          // Passamos o 'true' para ele pular o cadeado e ir direto pros avatares!
+          builder: (context) => const TelaLogin(manterDesbloqueado: true)));
 }
 
 class MenuLateral extends StatelessWidget {
@@ -1316,7 +1351,7 @@ void _gerenciarCategorias(BuildContext context) {
                     var d = doc.data() as Map<String, dynamic>;
                     return ListTile(
                         leading: Icon(
-                            IconData(d['icone'], fontFamily: 'MaterialIcons'),
+                            mapaDeIcones[d['icone']] ?? Icons.category,
                             color: Color(d['cor'])),
                         title: Text(d['nome']),
                         trailing: IconButton(
@@ -1437,8 +1472,7 @@ class CategoriaSelector extends StatelessWidget {
                     padding: const EdgeInsets.only(right: 8.0),
                     child: FilterChip(
                         label: Row(mainAxisSize: MainAxisSize.min, children: [
-                          Icon(
-                              IconData(d['icone'], fontFamily: 'MaterialIcons'),
+                          Icon(mapaDeIcones[d['icone']] ?? Icons.category,
                               size: 16,
                               color: isSel ? Colors.white : Color(d['cor'])),
                           const SizedBox(width: 5),
