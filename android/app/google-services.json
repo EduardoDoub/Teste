@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "97129553247",
+    "project_id": "financascasal-32f8b",
+    "storage_bucket": "financascasal-32f8b.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:97129553247:android:d6ffe5e9ccb44376bf2aea",
+        "android_client_info": {
+          "package_name": "com.example.helloworld"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAaPHIU1aeQhYwJf1y9KbgV3l0W9XrZ-oQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -7,6 +7,9 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:universal_html/html.dart' as html;
 import 'dart:convert';
 import 'dart:math';
+import 'package:url_launcher/url_launcher.dart';
+
+const int BUILD_INTERNO = 1;
 
 final ValueNotifier<ThemeMode> appThemeMode = ValueNotifier(ThemeMode.dark);
 final ValueNotifier<double> appTextScale = ValueNotifier(1.0);
@@ -62,6 +65,10 @@ DateTime obterMesContabil() {
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  FlutterError.onError = (FlutterErrorDetails details) {
+    FlutterError.dumpErrorToConsole(details);
+  };
 
   // Inicializa o Firebase rápido
   await Firebase.initializeApp(
@@ -302,6 +309,69 @@ class _TelaLoginState extends State<TelaLogin> {
   bool _mostrarSenha = false;
   bool _loginIncorreto = false;
 
+  void _verificarAtualizacaoObrigatoria() async {
+    try {
+      var doc = await FirebaseFirestore.instance
+          .collection('configuracoes')
+          .doc('app')
+          .get();
+
+      if (doc.exists && mounted) {
+        int buildDoBanco = doc.data()!['buildAtual'] ?? 1;
+        String linkDown = doc.data()!['linkApk'] ?? '';
+
+        // Se o banco diz que a versão é 2, e o app é 1, ele pede pra atualizar!
+        if (buildDoBanco > BUILD_INTERNO) {
+          showDialog(
+            context: context,
+            barrierDismissible:
+                false, // 👈 Bloqueia a tela! O usuário não consegue fechar.
+            builder: (ctx) => PopScope(
+              canPop: false, // Trava o botão de voltar do celular
+              child: AlertDialog(
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20)),
+                title: const Row(children: [
+                  Icon(Icons.system_update_alt, color: Colors.green),
+                  SizedBox(width: 10),
+                  Text('Atualização Exigida',
+                      style: TextStyle(
+                          color: Colors.green, fontWeight: FontWeight.bold)),
+                ]),
+                content: const Text(
+                  'Uma nova versão obrigatória do DOUB Finanças está disponível!\n\nPor favor, atualize para continuar usando o aplicativo com segurança.',
+                ),
+                actions: [
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.green),
+                      icon: const Icon(Icons.download, color: Colors.white),
+                      label: const Text('Baixar Nova Versão',
+                          style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold)),
+                      onPressed: () async {
+                        Uri url = Uri.parse(linkDown);
+                        if (await canLaunchUrl(url)) {
+                          await launchUrl(url,
+                              mode: LaunchMode.externalApplication);
+                        }
+                      },
+                    ),
+                  )
+                ],
+              ),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      // Se estiver sem internet, ignora e tenta na próxima vez
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -311,6 +381,10 @@ class _TelaLoginState extends State<TelaLogin> {
     if (!widget.manterDesbloqueado) {
       _iniciarAnimacaoCinema();
     }
+    // 👇 O app mal abriu e já verifica sorrateiramente se tem versão nova!
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _verificarAtualizacaoObrigatoria();
+    });
   }
 
   void _verificarFamiliaSalva() async {
@@ -684,7 +758,7 @@ class _TelaLoginState extends State<TelaLogin> {
                       child: Padding(
                         padding: const EdgeInsets.only(bottom: 20.0),
                         child: Text(
-                          'Versão 2.7(.3)\n© ${DateTime.now().year} DOUB. Todos os direitos reservados.',
+                          'Versão 1.0\n© ${DateTime.now().year} DOUB. Todos os direitos reservados.',
                           textAlign: TextAlign.center,
                           style: const TextStyle(
                               fontSize: 14.5,
