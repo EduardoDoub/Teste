@@ -9,7 +9,7 @@ import 'dart:convert';
 import 'dart:math';
 import 'package:url_launcher/url_launcher.dart';
 
-const int BUILD_INTERNO = 1;
+const int BUILD_INTERNO = 2;
 
 final ValueNotifier<ThemeMode> appThemeMode = ValueNotifier(ThemeMode.dark);
 final ValueNotifier<double> appTextScale = ValueNotifier(1.0);

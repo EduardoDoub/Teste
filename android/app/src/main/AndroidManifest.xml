@@ -2,9 +2,9 @@
     <uses-permission android:name="android.permission.INTERNET"/>
     
     <application
-        android:label="helloworld"
+        android:label="DOUB Finanças"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/icone">
         <activity
             android:name=".MainActivity"
             android:exported="true"
