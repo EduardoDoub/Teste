@@ -297,7 +297,17 @@ class _TelaLoginState extends State<TelaLogin> {
   void initState() {
     super.initState();
     Future.microtask(() => _injetarConfiguracoesIniciaisBanco());
+    _verificarCofreSalvo(); // 👈 Tenta abrir a porta sozinho!
     _iniciarAnimacaoCinema();
+  }
+
+  // 👇 MÁGICA 1: Olha a memória do navegador antes de pedir a senha!
+  void _verificarCofreSalvo() async {
+    final prefs = await SharedPreferences.getInstance();
+    bool cofreAberto = prefs.getBool('cofreAberto') ?? false;
+    if (cofreAberto && mounted) {
+      setState(() => _familiaDesbloqueada = true);
+    }
   }
 
   void _iniciarAnimacaoCinema() async {
@@ -364,8 +374,11 @@ class _TelaLoginState extends State<TelaLogin> {
             if (!context.mounted) return;
 
             if (doc.exists && doc.data()!['senha'] == senhaController.text) {
+              // 👇 MÁGICA 2: Salva para sempre no celular!
+              final prefs = await SharedPreferences.getInstance();
+              await prefs.setBool('cofreAberto', true);
+
               Navigator.pop(context);
-              // A Mágica! Abre a escolha de perfis!
               setState(() => _familiaDesbloqueada = true);
             } else {
               setStateDialog(() => senhaIncorreta = true);
@@ -646,7 +659,7 @@ class _TelaLoginState extends State<TelaLogin> {
         child: Padding(
           padding: const EdgeInsets.only(bottom: 20.0),
           child: Text(
-            'Versão 2.7 (Netflix)\n© ${DateTime.now().year} DOUB. Todos os direitos reservados.',
+            'Versão 2.7(.2)\n© ${DateTime.now().year} DOUB. Todos os direitos reservados.',
             textAlign: TextAlign.center,
             style: const TextStyle(
                 fontSize: 14.5,
