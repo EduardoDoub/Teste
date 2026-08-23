@@ -10,7 +10,7 @@ import 'dart:math';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:http/http.dart' as http; // 👉 NOVO IMPORT AQUI!
 
-const int BUILD_INTERNO = 3;
+const int BUILD_INTERNO = 4;
 
 final ValueNotifier<ThemeMode> appThemeMode = ValueNotifier(ThemeMode.dark);
 final ValueNotifier<double> appTextScale = ValueNotifier(1.0);
@@ -314,6 +314,226 @@ class _TelaLoginState extends State<TelaLogin> {
   final TextEditingController _senhaCtrl = TextEditingController();
   bool _mostrarSenha = false;
   bool _loginIncorreto = false;
+
+  // ➕ MODAL PARA ADICIONAR NOVO MEMBRO
+  void _mostrarModalAdicionarMembro(BuildContext context) {
+    final TextEditingController nomeCtrl = TextEditingController();
+    Color corSelecionada = Colors.blue;
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setStateModal) {
+            return AlertDialog(
+              title: const Text('Novo Membro da Família'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: nomeCtrl,
+                    decoration:
+                        const InputDecoration(labelText: 'Nome do Membro'),
+                  ),
+                  const SizedBox(height: 20),
+                  const Text('Escolha a Cor do Personagem:'),
+                  const SizedBox(height: 10),
+                  // PALETA DE CORES RÁPIDA
+                  Wrap(
+                    spacing: 12,
+                    children: [
+                      Colors.blue,
+                      Colors.green,
+                      Colors.purple,
+                      Colors.orange,
+                      Colors.red,
+                      Colors.pink,
+                      Colors.teal
+                    ].map((cor) {
+                      bool selecionada = corSelecionada == cor;
+                      return GestureDetector(
+                        onTap: () => setStateModal(() => corSelecionada = cor),
+                        child: Container(
+                          width: 35,
+                          height: 35,
+                          decoration: BoxDecoration(
+                            color: cor,
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                                color: selecionada
+                                    ? Colors.black
+                                    : Colors.transparent,
+                                width: 3),
+                          ),
+                          child: selecionada
+                              ? const Icon(Icons.check,
+                                  color: Colors.white, size: 20)
+                              : null,
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('Cancelar')),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xff235224)),
+                  onPressed: () async {
+                    if (nomeCtrl.text.trim().isEmpty) return;
+
+                    // 🛡️ TRAVA DE LIMITE DE MEMBROS (Ex: Máximo de 5 membros)
+                    var membrosAtuais = await FirebaseFirestore.instance
+                        .collection('usuarios')
+                        .where('familiaId', isEqualTo: _nomeFamiliaAtual)
+                        .get();
+
+                    if (membrosAtuais.docs.length >= 5) {
+                      if (!context.mounted) return;
+                      Navigator.pop(context);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text(
+                              'Limite máximo de 5 membros por família atingido!',
+                              style: TextStyle(color: Colors.white)),
+                          backgroundColor: Colors.red,
+                        ),
+                      );
+                      return;
+                    }
+
+                    // Se passou da trava, salva normalmente:
+                    await FirebaseFirestore.instance
+                        .collection('usuarios')
+                        .add({
+                      'nome': nomeCtrl.text.trim(),
+                      'familiaId': _nomeFamiliaAtual,
+                      'cor': corSelecionada.value,
+                    });
+
+                    if (!context.mounted) return;
+                    Navigator.pop(context);
+                  },
+                  child: const Text('Adicionar',
+                      style: TextStyle(color: Colors.white)),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  // ✏️ MODAL PARA EDITAR MEMBRO EXISTENTE
+  void _mostrarModalEditarMembro(
+      BuildContext context, String docId, String nomeAtual, int corAtual) {
+    final TextEditingController nomeCtrl =
+        TextEditingController(text: nomeAtual);
+    Color corSelecionada = Color(corAtual);
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setStateModal) {
+            return AlertDialog(
+              title: const Text('Editar Membro'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: nomeCtrl,
+                    decoration:
+                        const InputDecoration(labelText: 'Nome do Membro'),
+                  ),
+                  const SizedBox(height: 20),
+                  const Text('Alterar Cor:'),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 12,
+                    children: [
+                      Colors.blue,
+                      Colors.green,
+                      Colors.purple,
+                      Colors.orange,
+                      Colors.red,
+                      Colors.pink,
+                      Colors.teal
+                    ].map((cor) {
+                      bool selecionada = corSelecionada.value == cor.value;
+                      return GestureDetector(
+                        onTap: () => setStateModal(() => corSelecionada = cor),
+                        child: Container(
+                          width: 35,
+                          height: 35,
+                          decoration: BoxDecoration(
+                            color: cor,
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                                color: selecionada
+                                    ? Colors.black
+                                    : Colors.transparent,
+                                width: 3),
+                          ),
+                          child: selecionada
+                              ? const Icon(Icons.check,
+                                  color: Colors.white, size: 20)
+                              : null,
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () async {
+                    // Opção de excluir membro se quiser
+                    await FirebaseFirestore.instance
+                        .collection('usuarios')
+                        .doc(docId)
+                        .delete();
+                    if (!context.mounted) return;
+                    Navigator.pop(context);
+                  },
+                  child: const Text('Excluir',
+                      style: TextStyle(color: Colors.red)),
+                ),
+                TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('Cancelar')),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xff235224)),
+                  onPressed: () async {
+                    if (nomeCtrl.text.trim().isEmpty) return;
+
+                    // Atualiza o documento no Firestore
+                    await FirebaseFirestore.instance
+                        .collection('usuarios')
+                        .doc(docId)
+                        .update({
+                      'nome': nomeCtrl.text.trim(),
+                      'cor': corSelecionada.value,
+                    });
+
+                    if (!context.mounted) return;
+                    Navigator.pop(context);
+                  },
+                  child: const Text('Salvar',
+                      style: TextStyle(color: Colors.white)),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
 
   void _verificarAtualizacaoObrigatoria() async {
     try {
@@ -711,61 +931,142 @@ class _TelaLoginState extends State<TelaLogin> {
                                 color: Colors.green,
                                 fontWeight: FontWeight.bold)),
                         const SizedBox(height: 30),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            // --- PERFIL EDUARDO ---
-                            GestureDetector(
-                                onTap: () =>
-                                    _entrarNoPerfilDireto(context, 'Eduardo'),
-                                child: Column(children: [
-                                  Container(
-                                    padding: const EdgeInsets.all(15),
-                                    decoration: BoxDecoration(
-                                        color:
-                                            Colors.blue.withValues(alpha: 0.1),
-                                        shape: BoxShape.circle,
-                                        border: Border.all(
-                                            color: Colors.blue, width: 2)),
-                                    child: const Icon(Icons.person,
-                                        size: 50, color: Colors.blue),
-                                  ),
-                                  const SizedBox(height: 10),
-                                  Text('Eduardo',
-                                      style: TextStyle(
+                        // 👇 STREAMBUILDER DINÂMICO COM SUPORTE A CORES E EDIÇÃO!
+                        StreamBuilder<QuerySnapshot>(
+                          stream: FirebaseFirestore.instance
+                              .collection('usuarios')
+                              .where('familiaId', isEqualTo: _nomeFamiliaAtual)
+                              .snapshots(),
+                          builder: (context, snapshot) {
+                            if (snapshot.connectionState ==
+                                ConnectionState.waiting) {
+                              return const CircularProgressIndicator(
+                                  color: Colors.green);
+                            }
+
+                            var docsUsuarios =
+                                snapshot.hasData ? snapshot.data!.docs : [];
+
+                            return Wrap(
+                              spacing: 25,
+                              runSpacing: 20,
+                              alignment: WrapAlignment.center,
+                              children: [
+                                // 1. LISTA OS MEMBROS JÁ CADASTRADOS
+                                ...docsUsuarios.map((doc) {
+                                  var dados =
+                                      doc.data() as Map<String, dynamic>;
+                                  String docId = doc.id;
+                                  String nomeUsuario =
+                                      dados['nome'] ?? 'Membro';
+
+                                  // Pega a cor salva no banco (ou usa azul como padrão)
+                                  int corValor =
+                                      dados['cor'] ?? Colors.blue.value;
+                                  Color corMembro = Color(corValor);
+
+                                  return Stack(
+                                    clipBehavior: Clip.none,
+                                    children: [
+                                      // BOTÃO DO PERFIL
+                                      GestureDetector(
+                                        onTap: () => _entrarNoPerfilDireto(
+                                            context, nomeUsuario),
+                                        child: Column(
+                                          children: [
+                                            Container(
+                                              padding: const EdgeInsets.all(15),
+                                              decoration: BoxDecoration(
+                                                color: corMembro.withValues(
+                                                    alpha: 0.1),
+                                                shape: BoxShape.circle,
+                                                border: Border.all(
+                                                    color: corMembro, width: 2),
+                                              ),
+                                              child: Icon(Icons.person,
+                                                  size: 50, color: corMembro),
+                                            ),
+                                            const SizedBox(height: 10),
+                                            Text(
+                                              nomeUsuario,
+                                              style: TextStyle(
+                                                fontSize: 16,
+                                                fontWeight: FontWeight.bold,
+                                                color: isDark
+                                                    ? Colors.white
+                                                    : Colors.black,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      // ✏️ BOTÃO DE EDIÇÃO (LÁPIS) NO CANTO DO AVATAR
+                                      Positioned(
+                                        right: 0,
+                                        top: 0,
+                                        child: InkWell(
+                                          onTap: () =>
+                                              _mostrarModalEditarMembro(context,
+                                                  docId, nomeUsuario, corValor),
+                                          child: Container(
+                                            padding: const EdgeInsets.all(6),
+                                            decoration: BoxDecoration(
+                                              color: isDark
+                                                  ? Colors.grey.shade800
+                                                  : Colors.white,
+                                              shape: BoxShape.circle,
+                                              boxShadow: [
+                                                BoxShadow(
+                                                    color: Colors.black12,
+                                                    blurRadius: 4)
+                                              ],
+                                              border: Border.all(
+                                                  color: Colors.grey.shade400),
+                                            ),
+                                            child: const Icon(Icons.edit,
+                                                size: 14, color: Colors.grey),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  );
+                                }).toList(),
+
+                                // 2. BOTÃO DE ADICIONAR NOVO MEMBRO (+)
+                                GestureDetector(
+                                  onTap: () =>
+                                      _mostrarModalAdicionarMembro(context),
+                                  child: Column(
+                                    children: [
+                                      Container(
+                                        padding: const EdgeInsets.all(15),
+                                        decoration: BoxDecoration(
+                                          color: Colors.green
+                                              .withValues(alpha: 0.1),
+                                          shape: BoxShape.circle,
+                                          border: Border.all(
+                                              color: Colors.green,
+                                              width: 2,
+                                              style: BorderStyle.solid),
+                                        ),
+                                        child: const Icon(Icons.add,
+                                            size: 50, color: Colors.green),
+                                      ),
+                                      const SizedBox(height: 10),
+                                      const Text(
+                                        'Adicionar',
+                                        style: TextStyle(
                                           fontSize: 16,
                                           fontWeight: FontWeight.bold,
-                                          color: isDark
-                                              ? Colors.white
-                                              : Colors.black))
-                                ])),
-                            const SizedBox(width: 40),
-                            // --- PERFIL NAIUB ---
-                            GestureDetector(
-                                onTap: () =>
-                                    _entrarNoPerfilDireto(context, 'Naiub'),
-                                child: Column(children: [
-                                  Container(
-                                    padding: const EdgeInsets.all(15),
-                                    decoration: BoxDecoration(
-                                        color: Colors.purple
-                                            .withValues(alpha: 0.1),
-                                        shape: BoxShape.circle,
-                                        border: Border.all(
-                                            color: Colors.purple, width: 2)),
-                                    child: const Icon(Icons.person,
-                                        size: 50, color: Colors.purple),
+                                          color: Colors.green,
+                                        ),
+                                      ),
+                                    ],
                                   ),
-                                  const SizedBox(height: 10),
-                                  Text('Naiub',
-                                      style: TextStyle(
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.bold,
-                                          color: isDark
-                                              ? Colors.white
-                                              : Colors.black))
-                                ])),
-                          ],
+                                ),
+                              ],
+                            );
+                          },
                         ),
                         const SizedBox(height: 30),
                         TextButton(
@@ -798,7 +1099,7 @@ class _TelaLoginState extends State<TelaLogin> {
               child: Padding(
                 padding: const EdgeInsets.only(bottom: 20.0),
                 child: Text(
-                  'Versão 2.0\n© ${DateTime.now().year} DOUB. Todos os direitos reservados.',
+                  'Versão 4.0\n© ${DateTime.now().year} DOUB. Todos os direitos reservados.',
                   textAlign: TextAlign.center,
                   style: const TextStyle(
                       fontSize: 14.5,
@@ -851,7 +1152,11 @@ void sairDoUsuario(BuildContext context) async {
 
 class MenuLateral extends StatelessWidget {
   final String usuarioLogado;
-  const MenuLateral({super.key, required this.usuarioLogado});
+  final String familiaLogada; // 👉 NOVA LINHA
+  const MenuLateral(
+      {super.key,
+      required this.usuarioLogado,
+      required this.familiaLogada}); // 👉 CORRIGIDO;
 
   void _abrirNews(BuildContext context) {
     final ScrollController scrollController = ScrollController();
@@ -931,6 +1236,7 @@ class MenuLateral extends StatelessWidget {
 
       var query = await FirebaseFirestore.instance
           .collection('lancamentos')
+          .where('familiaId', isEqualTo: familiaLogada) // 👉 CORRIGIDO
           .where('data', isGreaterThanOrEqualTo: Timestamp.fromDate(inicio))
           .where('data', isLessThan: Timestamp.fromDate(fim))
           .orderBy('data', descending: true)
@@ -1455,7 +1761,8 @@ class SeletorMes extends StatelessWidget {
   }
 }
 
-void _gerenciarCategorias(BuildContext context) {
+// 👇 1. AGORA RECEBE A FAMÍLIA COMO PARÂMETRO
+void _gerenciarCategorias(BuildContext context, String familiaLogada) {
   showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -1469,6 +1776,8 @@ void _gerenciarCategorias(BuildContext context) {
             body: StreamBuilder<QuerySnapshot>(
                 stream: FirebaseFirestore.instance
                     .collection('categorias')
+                    .where('familiaId',
+                        isEqualTo: familiaLogada) // 👉 FILTRO ADICIONADO!
                     .where('ativo', isEqualTo: true)
                     .snapshots(),
                 builder: (c, s) {
@@ -1586,14 +1895,22 @@ void _novaCategoria(BuildContext context) {
 class CategoriaSelector extends StatelessWidget {
   final List<String> selecionadas;
   final Function(List<String>) onChanged;
+  final String familiaLogada; // 👉 VARIÁVEL ADICIONADA AQUI!
+
   const CategoriaSelector(
-      {super.key, required this.selecionadas, required this.onChanged});
+      {super.key,
+      required this.selecionadas,
+      required this.onChanged,
+      required this.familiaLogada});
+
   @override
   Widget build(BuildContext context) {
     bool isDark = Theme.of(context).brightness == Brightness.dark;
     return StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance
             .collection('categorias')
+            .where('familiaId',
+                isEqualTo: familiaLogada) // 👉 FILTRO ADICIONADO AQUI!
             .where('ativo', isEqualTo: true)
             .snapshots(),
         builder: (context, snap) {
@@ -1760,6 +2077,8 @@ class _TelaNavegacaoState extends State<TelaNavegacao> {
       var batch = FirebaseFirestore.instance.batch();
       var antigos = await FirebaseFirestore.instance
           .collection('lancamentos')
+          .where('familiaId',
+              isEqualTo: _familiaLogada) // 👉 FILTRO ADICIONADO AQUI!
           .where('data', isLessThan: Timestamp.fromDate(limitePassado))
           .get();
       for (var doc in antigos.docs) {
@@ -1770,6 +2089,8 @@ class _TelaNavegacaoState extends State<TelaNavegacao> {
       }
       var fixas = await FirebaseFirestore.instance
           .collection('lancamentos')
+          .where('familiaId',
+              isEqualTo: _familiaLogada) // 👉 FILTRO ADICIONADO AQUI!
           .where('isContaFixa', isEqualTo: true)
           .get();
       Map<String, DocumentSnapshot> ultimaDeCadaGrupo = {};
@@ -1805,6 +2126,7 @@ class _TelaNavegacaoState extends State<TelaNavegacao> {
               'descricao': dados['descricao'],
               'valor': dados['valor'],
               'responsavel': dados['responsavel'],
+              'familiaId': _familiaLogada, // 👉 ETIQUETA DA FAMÍLIA ADICIONADA!
               'data': Timestamp.fromDate(novaData),
               'isParcelamento': dados['isParcelamento'] ?? false,
               'isCartao': dados['isCartao'] ?? false,
@@ -1847,7 +2169,8 @@ class _TelaNavegacaoState extends State<TelaNavegacao> {
       TelaVisaoGeralTripla(
           mesAno: _dataSelecionada,
           aoMudarMes: _mudarMes,
-          aoMudarMesEspecifico: _mudarParaMesEspecifico),
+          aoMudarMesEspecifico: _mudarParaMesEspecifico,
+          familiaLogada: _familiaLogada),
       // A nova tela que agrupa o cartão:
       TelaCartao(
           mesAno: _dataSelecionada,
@@ -1855,7 +2178,9 @@ class _TelaNavegacaoState extends State<TelaNavegacao> {
           usuarioLogado: widget.usuarioLogado,
           familiaLogada: _familiaLogada), // 👉 ADICIONADO
       // A nova tela da Pizza:
-      const TelaEstatisticas(),
+      TelaEstatisticas(
+          familiaLogada:
+              _familiaLogada), // 👉 REMOVIDO O "const" E ADICIONADO AQUI!
       TelaPoupanca(
           mesAno: _dataSelecionada,
           aoMudarMes: _mudarMes,
@@ -1864,7 +2189,8 @@ class _TelaNavegacaoState extends State<TelaNavegacao> {
     ];
 
     return Scaffold(
-      drawer: MenuLateral(usuarioLogado: widget.usuarioLogado),
+      drawer: MenuLateral(
+          usuarioLogado: widget.usuarioLogado, familiaLogada: _familiaLogada),
       appBar: AppBar(
         // 👇 2. ATUALIZAMOS OS TÍTULOS DO TOPO
         title: Text(['', '', '', ''][_indiceAtual]),
@@ -1941,12 +2267,14 @@ class TelaVisaoGeralTripla extends StatelessWidget {
   final DateTime mesAno;
   final Function(int) aoMudarMes;
   final Function(DateTime) aoMudarMesEspecifico;
+  final String familiaLogada; // 👉 NOVA LINHA
 
   const TelaVisaoGeralTripla({
     super.key,
     required this.mesAno,
     required this.aoMudarMes,
     required this.aoMudarMesEspecifico,
+    required this.familiaLogada, // 👉 NOVA LINHA
   });
 
   @override
@@ -1956,7 +2284,9 @@ class TelaVisaoGeralTripla extends StatelessWidget {
         SeletorMes(dataAtual: mesAno, aoMudar: aoMudarMes),
         Expanded(
             child: _TabMensal(
-                mesAno: mesAno)), // Mostra o resumo direto, sem abas!
+                mesAno: mesAno,
+                familiaLogada:
+                    familiaLogada)), // 👉 REPASSANDO // Mostra o resumo direto, sem abas!
       ],
     );
   }
@@ -1964,7 +2294,10 @@ class TelaVisaoGeralTripla extends StatelessWidget {
 
 class _TabMensal extends StatelessWidget {
   final DateTime mesAno;
-  const _TabMensal({required this.mesAno});
+  final String familiaLogada; // 👉 ESSA É A LINHA QUE ESTAVA FALTANDO!
+  const _TabMensal(
+      {required this.mesAno,
+      required this.familiaLogada}); // 👉 CORRIGIDO // 👉 CORRIGIDO
 
   @override
   Widget build(BuildContext context) {
@@ -1975,6 +2308,8 @@ class _TabMensal extends StatelessWidget {
     return StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance
             .collection('lancamentos')
+            .where('familiaId',
+                isEqualTo: familiaLogada) // 👉 ADICIONE ESTA LINHA!
             .where('data', isGreaterThanOrEqualTo: Timestamp.fromDate(inicio))
             .where('data', isLessThan: Timestamp.fromDate(fim))
             .snapshots(),
@@ -2096,7 +2431,8 @@ class _TabMensal extends StatelessWidget {
                 icon: const Icon(Icons.settings_applications, size: 20),
                 label: const Text('Gerenciar Categorias',
                     style: TextStyle(fontWeight: FontWeight.normal)),
-                onPressed: () => _gerenciarCategorias(context))
+                onPressed: () => _gerenciarCategorias(
+                    context, familiaLogada)) // 👉 PASSANDO A FAMÍLIA AQUI
           ]);
         });
   }
@@ -2110,8 +2446,12 @@ class _TabMensal extends StatelessWidget {
 // =======================================================
 class _TabAnual extends StatelessWidget {
   final int ano;
+  final String familiaLogada; // 👉 NOVA LINHA
 
-  const _TabAnual({super.key, required this.ano});
+  const _TabAnual(
+      {super.key,
+      required this.ano,
+      required this.familiaLogada}); // 👉 CORRIGIDO
 
   // 👇 A janelinha que sobe quando aperta em "Outros Gastos"
   void _mostrarDetalhesFatia(BuildContext ctx, Map<String, dynamic> fatia) {
@@ -2190,6 +2530,8 @@ class _TabAnual extends StatelessWidget {
     return StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance
             .collection('lancamentos')
+            .where('familiaId',
+                isEqualTo: familiaLogada) // 🛡️ FILTRO BLINDADO!
             .where('data',
                 isGreaterThanOrEqualTo: Timestamp.fromDate(inicioAno))
             .where('data', isLessThan: Timestamp.fromDate(fimAno))
@@ -2574,6 +2916,8 @@ class TelaLancamentos extends StatelessWidget {
                                 color: Colors.green))),
                     if (isDespesa)
                       CategoriaSelector(
+                          familiaLogada:
+                              familiaLogada, // 👉 SÓ ADICIONAR ESSA LINHA NAS 4 VEZES!
                           selecionadas: catsSel,
                           onChanged: (l) =>
                               setStateBottomSheet(() => catsSel = l)),
@@ -2820,6 +3164,8 @@ class TelaLancamentos extends StatelessWidget {
                                 color: Colors.green))),
                     if (isDespesa)
                       CategoriaSelector(
+                          familiaLogada:
+                              familiaLogada, // 👉 SÓ ADICIONAR ESSA LINHA NAS 4 VEZES!
                           selecionadas: catsSel,
                           onChanged: (l) =>
                               setStateBottomSheet(() => catsSel = l)),
@@ -2981,6 +3327,10 @@ class TelaLancamentos extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // 👇 1. ADICIONAMOS AS DATAS DE INÍCIO E FIM DO MÊS
+    DateTime inicio = DateTime(mesAno.year, mesAno.month, 1);
+    DateTime fim = DateTime(mesAno.year, mesAno.month + 1, 1);
+
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: Column(
@@ -2994,9 +3344,20 @@ class TelaLancamentos extends StatelessWidget {
               child: StreamBuilder<QuerySnapshot>(
             stream: FirebaseFirestore.instance
                 .collection('lancamentos')
-                .orderBy('data', descending: true)
-                .snapshots(),
+                .where('familiaId', isEqualTo: familiaLogada)
+                .where('data',
+                    isGreaterThanOrEqualTo: Timestamp.fromDate(
+                        inicio)) // 👉 O MESMO FILTRO DO GRÁFICO!
+                .where('data', isLessThan: Timestamp.fromDate(fim))
+                .snapshots(), // ❌ RETIRAMOS O orderBy DAQUI!
             builder: (context, snapshotLanc) {
+              // 👇 2. O DETETIVE: SE TIVER ERRO NO BANCO, ELE VAI MOSTRAR NA TELA!
+              if (snapshotLanc.hasError) {
+                return Center(
+                    child: Text("Erro: ${snapshotLanc.error}",
+                        style: const TextStyle(color: Colors.white)));
+              }
+
               if (snapshotLanc.connectionState == ConnectionState.waiting) {
                 return const Center(
                     child: CircularProgressIndicator(color: Colors.green));
@@ -3006,23 +3367,32 @@ class TelaLancamentos extends StatelessWidget {
               List<DocumentSnapshot> despesas = [];
 
               if (snapshotLanc.hasData) {
-                for (var doc in snapshotLanc.data!.docs) {
+                // 👇 3. ORDENAMOS DIRETO NA MEMÓRIA DO CELULAR (MUITO MAIS RÁPIDO)
+                var docsOrdenados = snapshotLanc.data!.docs.toList();
+                docsOrdenados.sort((a, b) {
+                  var dataA =
+                      (a.data() as Map<String, dynamic>)['data'] as Timestamp;
+                  var dataB =
+                      (b.data() as Map<String, dynamic>)['data'] as Timestamp;
+                  return dataB.compareTo(dataA); // Mais recentes primeiro
+                });
+
+                for (var doc in docsOrdenados) {
                   final dados = doc.data() as Map<String, dynamic>;
                   if (dados['data'] == null) continue;
-                  final dataDoBanco = (dados['data'] as Timestamp).toDate();
-                  if (dataDoBanco.month == mesAno.month &&
-                      dataDoBanco.year == mesAno.year) {
-                    if (dados['isCartao'] == true ||
-                        dados['isParcelamento'] == true) {
-                      continue;
+
+                  // ❌ RETIRAMOS AQUELE "IF" ANTIGO DO MÊS, POIS O FIREBASE JÁ FILTROU
+
+                  if (dados['isCartao'] == true ||
+                      dados['isParcelamento'] == true) {
+                    continue;
+                  } else {
+                    if (dados['isDepositoDireto'] == true) continue;
+                    double val = (dados['valor'] ?? 0.0).toDouble();
+                    if (val >= 0) {
+                      rendas.add(doc);
                     } else {
-                      if (dados['isDepositoDireto'] == true) continue;
-                      double val = (dados['valor'] ?? 0.0).toDouble();
-                      if (val >= 0) {
-                        rendas.add(doc);
-                      } else {
-                        despesas.add(doc);
-                      }
+                      despesas.add(doc);
                     }
                   }
                 }
@@ -3030,6 +3400,7 @@ class TelaLancamentos extends StatelessWidget {
 
               List<Widget> listaFinal = [];
 
+              // (O restante do código de rendas e despesas continua igualzinho a partir daqui...)
               if (rendas.isNotEmpty) {
                 listaFinal.add(const Padding(
                     padding: EdgeInsets.only(top: 10, left: 16, bottom: 8),
@@ -3439,6 +3810,8 @@ class TelaParcelamentos extends StatelessWidget {
                   ]),
                   const SizedBox(height: 15),
                   CategoriaSelector(
+                      familiaLogada:
+                          familiaLogada, // 👉 SÓ ADICIONAR ESSA LINHA NAS 4 VEZES!
                       selecionadas: catsSel,
                       onChanged: (l) => setS(() => catsSel = l)),
                   const SizedBox(height: 20),
@@ -3565,6 +3938,8 @@ class TelaParcelamentos extends StatelessWidget {
                           prefixIcon: Icon(Icons.attach_money))),
                   const SizedBox(height: 15),
                   CategoriaSelector(
+                      familiaLogada:
+                          familiaLogada, // 👉 SÓ ADICIONAR ESSA LINHA NAS 4 VEZES!
                       selecionadas: catsSel,
                       onChanged: (l) => setS(() => catsSel = l)),
                   const SizedBox(height: 20),
@@ -3870,6 +4245,8 @@ class TelaParcelamentos extends StatelessWidget {
             child: StreamBuilder<QuerySnapshot>(
               stream: FirebaseFirestore.instance
                   .collection('lancamentos')
+                  .where('familiaId',
+                      isEqualTo: familiaLogada) // 👉 ADICIONE ESTA LINHA!
                   .where('data',
                       isGreaterThanOrEqualTo: Timestamp.fromDate(inicio))
                   .where('data', isLessThan: Timestamp.fromDate(fim))
@@ -4080,6 +4457,8 @@ class TelaPoupanca extends StatelessWidget {
               child: StreamBuilder<QuerySnapshot>(
                   stream: FirebaseFirestore.instance
                       .collection('lancamentos')
+                      .where('familiaId',
+                          isEqualTo: familiaLogada) // 👉 ADICIONE ESTA LINHA!
                       .where('isPoupanca', isEqualTo: true)
                       .snapshots(),
                   builder: (context, snapshot) {
@@ -4820,7 +5199,9 @@ class TelaCartao extends StatelessWidget {
 // TELA DE ESTATÍSTICAS (Com Estado 100% Independente) 📊
 // =======================================================
 class TelaEstatisticas extends StatefulWidget {
-  const TelaEstatisticas({super.key});
+  final String familiaLogada; // 👉 NOVA LINHA
+  const TelaEstatisticas(
+      {super.key, required this.familiaLogada}); // 👉 CORRIGIDO
 
   @override
   State<TelaEstatisticas> createState() => _TelaEstatisticasState();
@@ -4898,8 +5279,12 @@ class _TelaEstatisticasState extends State<TelaEstatisticas>
           child: TabBarView(
             controller: _tabController,
             children: [
-              _EstatisticasMensal(mesAno: _dataMensal),
-              _TabAnual(ano: _anoAnual),
+              _EstatisticasMensal(
+                  mesAno: _dataMensal,
+                  familiaLogada: widget.familiaLogada), // 👉 REPASSANDO
+              _TabAnual(
+                  ano: _anoAnual,
+                  familiaLogada: widget.familiaLogada), // 👉 REPASSANDO
             ],
           ),
         ),
@@ -4911,7 +5296,9 @@ class _TelaEstatisticasState extends State<TelaEstatisticas>
 // O miolo da Estatística (Para o código não virar uma bagunça)
 class _EstatisticasMensal extends StatelessWidget {
   final DateTime mesAno;
-  const _EstatisticasMensal({required this.mesAno});
+  final String familiaLogada; // 👉 NOVA LINHA
+  const _EstatisticasMensal(
+      {required this.mesAno, required this.familiaLogada}); // 👉 CORRIGIDO
 
   @override
   Widget build(BuildContext context) {
@@ -4922,6 +5309,8 @@ class _EstatisticasMensal extends StatelessWidget {
     return StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance
             .collection('lancamentos')
+            .where('familiaId',
+                isEqualTo: familiaLogada) // 🛡️ FILTRO BLINDADO!
             .where('data', isGreaterThanOrEqualTo: Timestamp.fromDate(inicio))
             .where('data', isLessThan: Timestamp.fromDate(fim))
             .snapshots(),
