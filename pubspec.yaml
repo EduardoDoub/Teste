@@ -2,7 +2,7 @@ name: helloworld
 description: Gestor Financeiro DOUB.
 publish_to: 'none'
 
-version: 1.0.0+1
+version: 1.0.0+3
 
 environment:
   sdk: ^3.0.0
@@ -16,7 +16,6 @@ dependencies:
   shared_preferences: any 
   flutter_localizations:
     sdk: flutter
-  snow_fall_animation: ^0.0.1
   universal_html: ^2.3.0
   upgrader: ^13.7.0
 

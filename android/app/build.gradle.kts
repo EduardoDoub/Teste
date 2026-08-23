@@ -6,6 +6,15 @@ plugins {
 }
 
 android {
+    signingConfigs {
+        create("release") {
+            keyAlias = "doub"
+            keyPassword = "doub123456"
+            // Coloque o nome exato do arquivo que subiu. Ex:
+            storeFile = file("doub.p12") 
+            storePassword = "doub123456"
+        }
+    }
     namespace = "com.example.helloworld"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
@@ -34,7 +43,7 @@ android {
         release {
             isMinifyEnabled = false
             isShrinkResources = false
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("release")
         }
     }
 }

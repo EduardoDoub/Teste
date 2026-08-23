@@ -9,7 +9,7 @@ import 'dart:convert';
 import 'dart:math';
 import 'package:url_launcher/url_launcher.dart';
 
-const int BUILD_INTERNO = 2;
+const int BUILD_INTERNO = 3;
 
 final ValueNotifier<ThemeMode> appThemeMode = ValueNotifier(ThemeMode.dark);
 final ValueNotifier<double> appTextScale = ValueNotifier(1.0);
@@ -317,7 +317,7 @@ class _TelaLoginState extends State<TelaLogin> {
           .get();
 
       if (doc.exists && mounted) {
-        int buildDoBanco = doc.data()!['buildAtual'] ?? 1;
+        num buildDoBanco = doc.data()!['buildAtual'] ?? 1;
         String linkDown = doc.data()!['linkApk'] ?? '';
 
         // Se o banco diz que a versão é 2, e o app é 1, ele pede pra atualizar!
@@ -353,10 +353,13 @@ class _TelaLoginState extends State<TelaLogin> {
                               color: Colors.white,
                               fontWeight: FontWeight.bold)),
                       onPressed: () async {
-                        Uri url = Uri.parse(linkDown);
-                        if (await canLaunchUrl(url)) {
+                        try {
+                          Uri url = Uri.parse(linkDown);
+                          // Removemos o "canLaunchUrl" que o Android bloqueia e mandamos abrir direto!
                           await launchUrl(url,
                               mode: LaunchMode.externalApplication);
+                        } catch (e) {
+                          debugPrint("Erro ao abrir link: $e");
                         }
                       },
                     ),
@@ -758,7 +761,7 @@ class _TelaLoginState extends State<TelaLogin> {
                       child: Padding(
                         padding: const EdgeInsets.only(bottom: 20.0),
                         child: Text(
-                          'Versão 1.0\n© ${DateTime.now().year} DOUB. Todos os direitos reservados.',
+                          'Versão 2.0\n© ${DateTime.now().year} DOUB. Todos os direitos reservados.',
                           textAlign: TextAlign.center,
                           style: const TextStyle(
                               fontSize: 14.5,
