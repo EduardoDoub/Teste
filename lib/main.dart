@@ -8,6 +8,7 @@ import 'package:universal_html/html.dart' as html;
 import 'dart:convert';
 import 'dart:math';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:http/http.dart' as http; // 👉 NOVO IMPORT AQUI!
 
 const int BUILD_INTERNO = 3;
 
@@ -94,68 +95,81 @@ void main() async {
 
 Future<void> _injetarConfiguracoesIniciaisBanco() async {
   try {
-    // 👇 1. CRIA A FAMÍLIA DOUB NO BANCO (A Porta da Casa)
+    // 👇 1. CRIA A FAMÍLIA DOUB NO BANCO SE ELA NÃO EXISTIR
     var dbFamilias = FirebaseFirestore.instance.collection('familias');
     var docDoub = await dbFamilias.doc('DOUB').get();
     if (!docDoub.exists) {
-      await dbFamilias
-          .doc('DOUB')
-          .set({'senha': 'ADMIN123'}); // Senha da família
+      await dbFamilias.doc('DOUB').set({
+        'senha': 'ADMIN123',
+        'dono': 'Eduardo',
+        'email': 'Eduardoliveira2003@gmail.com'
+      });
     }
 
-    // 👇 2. CRIA OS USUÁRIOS (Os Quartos)
+    // 👇 2. A MIGRAÇÃO FORÇADA
+    // --- A. Usuários ---
     var dbUsuarios = FirebaseFirestore.instance.collection('usuarios');
-
-    var docEduardo = await dbUsuarios.doc('Eduardo').get();
-    if (!docEduardo.exists) {
-      await dbUsuarios
-          .doc('Eduardo')
-          .set({'senha': 'ADMIN123', 'codigo': '711@2709'});
+    var usuariosGet = await dbUsuarios.get(); // Pega TODOS os usuários
+    for (var u in usuariosGet.docs) {
+      if (!(u.data() as Map).containsKey('familiaId')) {
+        await u.reference.update({'familiaId': 'DOUB'});
+      }
     }
 
-    var docNaiub = await dbUsuarios.doc('Naiub').get();
-    if (!docNaiub.exists) {
-      await dbUsuarios
-          .doc('Naiub')
-          .set({'senha': 'ADMIN123', 'codigo': '713@2105'});
-    }
-
-    // 👇 3. CRIA AS CATEGORIAS E SALVA NA MEMÓRIA RÁPIDA (Cache)
+    // --- B. Categorias ---
     var dbCats = FirebaseFirestore.instance.collection('categorias');
-    var catsGet = await dbCats.limit(1).get();
-    if (catsGet.docs.isEmpty) {
+    var catsGet = await dbCats.get(); // Pega TODAS as categorias
+    if (catsGet.docs.isNotEmpty) {
+      for (var c in catsGet.docs) {
+        if (!(c.data() as Map).containsKey('familiaId')) {
+          await c.reference.update({'familiaId': 'DOUB'});
+        }
+      }
+    } else {
       await dbCats.add({
         'nome': 'Mercado',
         'icone': Icons.shopping_cart.codePoint,
         'cor': Colors.green.toARGB32(),
-        'ativo': true
+        'ativo': true,
+        'familiaId': 'DOUB'
       });
       await dbCats.add({
         'nome': 'Combustível',
         'icone': Icons.local_gas_station.codePoint,
         'cor': Colors.orange.toARGB32(),
-        'ativo': true
+        'ativo': true,
+        'familiaId': 'DOUB'
       });
       await dbCats.add({
         'nome': 'Lazer',
         'icone': Icons.movie.codePoint,
         'cor': Colors.purple.toARGB32(),
-        'ativo': true
+        'ativo': true,
+        'familiaId': 'DOUB'
       });
       await dbCats.add({
         'nome': 'Contas Fixas',
         'icone': Icons.home.codePoint,
         'cor': Colors.blue.toARGB32(),
-        'ativo': true
+        'ativo': true,
+        'familiaId': 'DOUB'
       });
     }
 
-    var catsGetCache = await dbCats.get();
-    for (var doc in catsGetCache.docs) {
-      cacheCategoriasGeral[doc.id] = doc.data();
+    // --- C. Lançamentos (O seu dinheiro!) ---
+    var dbLancamentos = FirebaseFirestore.instance.collection('lancamentos');
+    var lancamentosGet = await dbLancamentos.get(); // Pega TODOS os lançamentos
+    for (var l in lancamentosGet.docs) {
+      if (!(l.data() as Map).containsKey('familiaId')) {
+        await l.reference.update({'familiaId': 'DOUB'});
+      }
     }
+
+    // 👇 3. CARREGA O CACHE APENAS DA FAMÍLIA ATUAL
+    // Como a tela de login já passou, a gente não vai carregar o cache aqui.
+    // O cache será carregado DEPOIS que o usuário logar, filtrando pela família dele.
   } catch (e) {
-    debugPrint("Erro Init: $e");
+    debugPrint("Erro Init Migração: $e");
   }
 }
 
@@ -408,7 +422,6 @@ class _TelaLoginState extends State<TelaLogin> {
   }
 
   void _tentarLoginDireto() async {
-    // 👈 Mágica: Abaixa o teclado do celular ao apertar Enter
     FocusScope.of(context).unfocus();
 
     String familiaDigitada = _usuarioCtrl.text.trim().toUpperCase();
@@ -423,13 +436,44 @@ class _TelaLoginState extends State<TelaLogin> {
 
     if (doc.exists && doc.data()!['senha'] == _senhaCtrl.text) {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('familiaAberta', familiaDigitada);
 
-      setState(() {
-        _nomeFamiliaAtual = familiaDigitada;
-        _familiaDesbloqueada = true;
-        _loginIncorreto = false;
-      });
+      // 🛡️ A BARREIRA DO 2FA
+      // Verifica se ESSE dispositivo já foi verificado por e-mail para ESSA família
+      bool dispositivoVerificado =
+          prefs.getBool('dispositivo_verificado_$familiaDigitada') ?? false;
+
+      if (dispositivoVerificado) {
+        // Se já tem o selo, entra direto!
+        await prefs.setString('familiaAberta', familiaDigitada);
+        setState(() {
+          _nomeFamiliaAtual = familiaDigitada;
+          _familiaDesbloqueada = true;
+          _loginIncorreto = false;
+        });
+      } else {
+        // Se não tem o selo, manda para a tela de Verificação (2FA)!
+        String dono = doc.data()!['dono'] ?? 'Membro DOUB';
+        String email = doc.data()!['email'] ?? '';
+
+        if (email.isEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+              content: Text('Erro: Família sem e-mail cadastrado.',
+                  style: TextStyle(color: Colors.white)),
+              backgroundColor: Colors.red));
+          return;
+        }
+
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => TelaVerificacao2FA(
+              familiaLogada: familiaDigitada,
+              donoFamilia: dono,
+              emailDestino: email,
+            ),
+          ),
+        );
+      }
     } else {
       setState(() => _loginIncorreto = true);
     }
@@ -636,6 +680,22 @@ class _TelaLoginState extends State<TelaLogin> {
                                           color: Colors.white,
                                           letterSpacing: 1.5)),
                                 ),
+                              ),
+                              // 👇 ADICIONE ESTAS DUAS LINHAS AQUI 👇
+                              const SizedBox(height: 15),
+                              TextButton(
+                                onPressed: () {
+                                  Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                          builder: (context) =>
+                                              const TelaCadastroFamilia()));
+                                },
+                                child: const Text(
+                                    'Ainda não tem uma família? Cadastre-se',
+                                    style: TextStyle(
+                                        color: Colors.green,
+                                        fontWeight: FontWeight.bold)),
                               ),
                             ],
                           ),
@@ -1497,15 +1557,22 @@ void _novaCategoria(BuildContext context) {
                     onPressed: () => Navigator.pop(ctx),
                     child: const Text('Cancelar')),
                 ElevatedButton(
-                    onPressed: () {
+                    onPressed: () async {
+                      // 👉 1. O ASYNC PRECISA ESTAR AQUI
                       if (nomeCtrl.text.isNotEmpty) {
+                        // 👉 2. A VARIÁVEL TEM QUE NASCER AQUI DENTRO DO IF!
+                        final prefs = await SharedPreferences.getInstance();
+                        String familiaAtual =
+                            prefs.getString('familiaAberta') ?? 'DOUB';
+
                         FirebaseFirestore.instance
                             .collection('categorias')
                             .add({
                           'nome': nomeCtrl.text,
                           'icone': iconeSel.codePoint,
                           'cor': corSel.toARGB32(),
-                          'ativo': true
+                          'ativo': true,
+                          'familiaId': familiaAtual // 👉 AGORA ELE ENXERGA!
                         });
                         Navigator.pop(ctx);
                       }
@@ -1583,15 +1650,41 @@ class _TelaNavegacaoState extends State<TelaNavegacao> {
   int _indiceAtual = 0;
   DateTime _dataSelecionada = obterMesContabil();
 
+  String _familiaLogada = '';
+
   @override
   void initState() {
     super.initState();
+    _carregarFamiliaECategorias(); // 👉 1. Chama a função que busca a família e o cache
     _realizarManutencaoMensal();
 
     // ⚙️ Diz para o app: "Assim que a tela carregar, verifique as novidades!"
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _verificarNovidades();
     });
+  }
+
+  // 👉 NOVIDADE: A função que faz o trabalho duro antes da tela aparecer
+  void _carregarFamiliaECategorias() async {
+    final prefs = await SharedPreferences.getInstance();
+    _familiaLogada = prefs.getString('familiaAberta') ??
+        'DOUB'; // Pega a família do cofre ou assume DOUB
+
+    // Carrega só as categorias da família que está logada!
+    var catsGetCache = await FirebaseFirestore.instance
+        .collection('categorias')
+        .where('familiaId', isEqualTo: _familiaLogada)
+        .get();
+
+    cacheCategoriasGeral.clear(); // Limpa a memória
+    for (var doc in catsGetCache.docs) {
+      cacheCategoriasGeral[doc.id] = doc.data(); // Guarda as categorias certas
+    }
+
+    // Força a tela a desenhar de novo com os dados corretos!
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   // ⚙️ O MOTOR DO POP-UP DE NOTIFICAÇÃO
@@ -1759,13 +1852,15 @@ class _TelaNavegacaoState extends State<TelaNavegacao> {
       TelaCartao(
           mesAno: _dataSelecionada,
           aoMudarMes: _mudarMes,
-          usuarioLogado: widget.usuarioLogado),
+          usuarioLogado: widget.usuarioLogado,
+          familiaLogada: _familiaLogada), // 👉 ADICIONADO
       // A nova tela da Pizza:
       const TelaEstatisticas(),
       TelaPoupanca(
           mesAno: _dataSelecionada,
           aoMudarMes: _mudarMes,
-          usuarioLogado: widget.usuarioLogado),
+          usuarioLogado: widget.usuarioLogado,
+          familiaLogada: _familiaLogada), // 👉 ADICIONADO
     ];
 
     return Scaffold(
@@ -2336,12 +2431,14 @@ class TelaLancamentos extends StatelessWidget {
   final DateTime mesAno;
   final Function(int) aoMudarMes;
   final String usuarioLogado;
+  final String familiaLogada; // 👉 NOVA LINHA AQUI!
 
   const TelaLancamentos(
       {super.key,
       required this.mesAno,
       required this.aoMudarMes,
-      required this.usuarioLogado});
+      required this.usuarioLogado,
+      required this.familiaLogada}); // 👉 NOVA LINHA AQUI!
 
   void _abrirFormulario(BuildContext context) {
     final TextEditingController descricaoController = TextEditingController();
@@ -2543,6 +2640,8 @@ class TelaLancamentos extends StatelessWidget {
                                         'descricao': descricaoController.text,
                                         'valor': vDigitado,
                                         'responsavel': usuarioLogado,
+                                        'familiaId':
+                                            familiaLogada, // 👉 ADICIONADO E CORRIGIDO
                                         'dataRealString':
                                             dataRealController.text,
                                         'data': Timestamp.fromDate(DateTime(
@@ -3244,12 +3343,14 @@ class TelaParcelamentos extends StatelessWidget {
   final DateTime mesAno;
   final Function(int) aoMudarMes;
   final String usuarioLogado;
+  final String familiaLogada; // 👉 NOVA LINHA AQUI!
 
   const TelaParcelamentos(
       {super.key,
       required this.mesAno,
       required this.aoMudarMes,
-      required this.usuarioLogado});
+      required this.usuarioLogado,
+      required this.familiaLogada}); // 👉 NOVA LINHA AQUI!
 
   void _abrirFormularioParcelamento(BuildContext context) {
     final TextEditingController desc = TextEditingController();
@@ -3389,6 +3490,8 @@ class TelaParcelamentos extends StatelessWidget {
                                       'isCartao': false,
                                       'parcelaAtual': numP,
                                       'totalParcelas': totP,
+                                      'familiaId':
+                                          familiaLogada, // 👉 ADICIONADO E CORRIGIDO
                                       'categorias': catsSel
                                     }..addAll(
                                         gId != null ? {'grupoId': gId} : {}));
@@ -3865,12 +3968,14 @@ class TelaPoupanca extends StatelessWidget {
   final DateTime mesAno;
   final Function(int) aoMudarMes;
   final String usuarioLogado;
+  final String familiaLogada; // 👉 NOVA LINHA AQUI!
 
   const TelaPoupanca(
       {super.key,
       required this.mesAno,
       required this.aoMudarMes,
-      required this.usuarioLogado});
+      required this.usuarioLogado,
+      required this.familiaLogada}); // 👉 NOVA LINHA AQUI!
 
   void _abrirFormularioDepositoDireto(BuildContext context) {
     final TextEditingController descCtrl =
@@ -3943,6 +4048,8 @@ class TelaPoupanca extends StatelessWidget {
                               'isCartao': false,
                               'isPoupanca': true,
                               'poupancaConfirmada': true,
+                              'familiaId':
+                                  familiaLogada, // 👉 ADICIONADO E CORRIGIDO
                               'isDepositoDireto': true
                             });
                             Navigator.pop(ctx);
@@ -4659,12 +4766,14 @@ class TelaCartao extends StatelessWidget {
   final DateTime mesAno;
   final Function(int) aoMudarMes;
   final String usuarioLogado;
+  final String familiaLogada; // 👉 1. AGORA O PAI RECEBE A FAMÍLIA
 
   const TelaCartao(
       {super.key,
       required this.mesAno,
       required this.aoMudarMes,
-      required this.usuarioLogado});
+      required this.usuarioLogado,
+      required this.familiaLogada}); // 👉 2. EXIGE A FAMÍLIA NA CRIAÇÃO
 
   @override
   Widget build(BuildContext context) {
@@ -4688,11 +4797,13 @@ class TelaCartao extends StatelessWidget {
                 TelaLancamentos(
                     mesAno: mesAno,
                     aoMudarMes: aoMudarMes,
-                    usuarioLogado: usuarioLogado),
+                    usuarioLogado: usuarioLogado,
+                    familiaLogada: familiaLogada),
                 TelaParcelamentos(
                     mesAno: mesAno,
                     aoMudarMes: aoMudarMes,
-                    usuarioLogado: usuarioLogado),
+                    usuarioLogado: usuarioLogado,
+                    familiaLogada: familiaLogada),
               ],
             ),
           ),
@@ -4920,4 +5031,384 @@ bool isNatal() {
   DateTime hoje = DateTime.now();
   // Se o mês for 12 (Dezembro), retorna true e liga o Natal! 🎄
   return hoje.month == 12;
+}
+
+// =======================================================
+// TELA DE CADASTRO DE NOVA FAMÍLIA 📝
+// =======================================================
+class TelaCadastroFamilia extends StatefulWidget {
+  const TelaCadastroFamilia({super.key});
+
+  @override
+  State<TelaCadastroFamilia> createState() => _TelaCadastroFamiliaState();
+}
+
+class _TelaCadastroFamiliaState extends State<TelaCadastroFamilia> {
+  final _emailCtrl = TextEditingController();
+  final _donoCtrl = TextEditingController();
+  final _familiaCtrl = TextEditingController();
+  final _senhaCtrl = TextEditingController();
+  final _confirmaSenhaCtrl = TextEditingController();
+  bool _mostrarSenha = false;
+
+  void _tentarCadastrar() {
+    // Validações visuais simples (Ainda não salva no banco, isso é Fase 2!)
+    if (_emailCtrl.text.isEmpty ||
+        _donoCtrl.text.isEmpty ||
+        _familiaCtrl.text.isEmpty ||
+        _senhaCtrl.text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Preencha todos os campos!',
+              style: TextStyle(color: Colors.white)),
+          backgroundColor: Colors.red));
+      return;
+    }
+    if (_senhaCtrl.text != _confirmaSenhaCtrl.text) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('As senhas não coincidem!',
+              style: TextStyle(color: Colors.white)),
+          backgroundColor: Colors.red));
+      return;
+    }
+
+    // Mensagem de sucesso temporária
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text(
+            'Visual validado! Na Fase 2 conectaremos isso ao Banco de Dados.',
+            style: TextStyle(color: Colors.white)),
+        backgroundColor: Colors.green));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    bool isDark = Theme.of(context).brightness == Brightness.dark;
+    Color corFundo = isDark ? const Color(0xFF121212) : Colors.green.shade50;
+
+    return Scaffold(
+      backgroundColor: corFundo,
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.green),
+          onPressed: () => Navigator.pop(context),
+        ),
+      ),
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(
+              maxWidth: 500), // Blindado contra o PC esticado!
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 35, vertical: 10),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.maps_home_work_outlined,
+                    size: 60, color: Colors.green),
+                const SizedBox(height: 15),
+                const Text('Nova Família DOUB',
+                    style:
+                        TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 10),
+                const Text('Crie seu cofre e convide os membros da sua casa.',
+                    style: TextStyle(color: Colors.grey),
+                    textAlign: TextAlign.center),
+                const SizedBox(height: 35),
+                TextField(
+                  controller: _emailCtrl,
+                  keyboardType: TextInputType.emailAddress,
+                  decoration: InputDecoration(
+                    labelText: 'E-mail (Para o Código de Segurança)',
+                    filled: true,
+                    fillColor: isDark ? Colors.grey.shade900 : Colors.white,
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide.none),
+                    prefixIcon: const Icon(Icons.email),
+                  ),
+                ),
+                const SizedBox(height: 15),
+                TextField(
+                  controller: _donoCtrl,
+                  textCapitalization: TextCapitalization.words,
+                  decoration: InputDecoration(
+                    labelText: 'Seu Nome (Dono da Conta)',
+                    filled: true,
+                    fillColor: isDark ? Colors.grey.shade900 : Colors.white,
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide.none),
+                    prefixIcon: const Icon(Icons.person),
+                  ),
+                ),
+                const SizedBox(height: 15),
+                TextField(
+                  controller: _familiaCtrl,
+                  textCapitalization: TextCapitalization.characters,
+                  decoration: InputDecoration(
+                    labelText: 'Nome da Família (Será o seu Login)',
+                    filled: true,
+                    fillColor: isDark ? Colors.grey.shade900 : Colors.white,
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide.none),
+                    prefixIcon: const Icon(Icons.group),
+                  ),
+                ),
+                const SizedBox(height: 15),
+                TextField(
+                  controller: _senhaCtrl,
+                  obscureText: !_mostrarSenha,
+                  decoration: InputDecoration(
+                    labelText: 'Senha da Família',
+                    filled: true,
+                    fillColor: isDark ? Colors.grey.shade900 : Colors.white,
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide.none),
+                    prefixIcon: const Icon(Icons.lock),
+                    suffixIcon: IconButton(
+                      icon: Icon(
+                          _mostrarSenha
+                              ? Icons.visibility
+                              : Icons.visibility_off,
+                          color: Colors.grey),
+                      onPressed: () =>
+                          setState(() => _mostrarSenha = !_mostrarSenha),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 15),
+                TextField(
+                  controller: _confirmaSenhaCtrl,
+                  obscureText: !_mostrarSenha,
+                  decoration: InputDecoration(
+                    labelText: 'Confirmar Senha',
+                    filled: true,
+                    fillColor: isDark ? Colors.grey.shade900 : Colors.white,
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide.none),
+                    prefixIcon: const Icon(Icons.lock_outline),
+                  ),
+                ),
+                const SizedBox(height: 30),
+                SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xff235224),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12)),
+                    ),
+                    onPressed: _tentarCadastrar,
+                    child: const Text('CADASTRAR FAMÍLIA',
+                        style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                            letterSpacing: 1.5)),
+                  ),
+                ),
+                const SizedBox(height: 30),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// =======================================================
+// TELA DE VERIFICAÇÃO EM DUAS ETAPAS (2FA CLOUDFLARE) 🔐
+// =======================================================
+class TelaVerificacao2FA extends StatefulWidget {
+  final String familiaLogada;
+  final String donoFamilia;
+  final String emailDestino;
+
+  const TelaVerificacao2FA({
+    super.key,
+    required this.familiaLogada,
+    required this.donoFamilia,
+    required this.emailDestino,
+  });
+
+  @override
+  State<TelaVerificacao2FA> createState() => _TelaVerificacao2FAState();
+}
+
+class _TelaVerificacao2FAState extends State<TelaVerificacao2FA> {
+  final TextEditingController _codigoCtrl = TextEditingController();
+  String _codigoGerado = '';
+  bool _enviandoEmail = true;
+  bool _erroNoEnvio = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _gerarEEnviarCodigo();
+  }
+
+  // ⚙️ O MOTOR DE GERAÇÃO E DISPARO
+  Future<void> _gerarEEnviarCodigo() async {
+    // 1. Gera um código de 8 caracteres alfanuméricos em caixa alta
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    final rnd = Random.secure();
+    _codigoGerado = String.fromCharCodes(Iterable.generate(
+        8, (_) => chars.codeUnitAt(rnd.nextInt(chars.length))));
+
+    try {
+      // 2. Tenta bater no seu servidor Cloudflare
+      final response = await http.post(
+        Uri.parse(
+            'https://doub-email-sender.eduardoliveira2003.workers.dev'), // O SEU SERVIDOR!
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'emailDestino': widget.emailDestino,
+          'nomeDono': widget.donoFamilia,
+          'codigo2FA': _codigoGerado,
+        }),
+      );
+
+      if (response.statusCode == 200 && mounted) {
+        setState(() {
+          _enviandoEmail = false;
+        });
+      } else {
+        throw Exception(
+            'Erro ${response.statusCode} - Detalhe: ${response.body}');
+      }
+    } catch (e) {
+      debugPrint("Erro Email: $e");
+      if (mounted) {
+        setState(() {
+          _enviandoEmail = false;
+          _erroNoEnvio = true;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content:
+              Text('Erro: $e', style: const TextStyle(color: Colors.white)),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 8),
+        ));
+      }
+    }
+  }
+
+  void _verificarCodigo() async {
+    if (_codigoCtrl.text.trim().toUpperCase() == _codigoGerado) {
+      // SUCESSO! Salva o "Selo de Confiança" no aparelho
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(
+          'dispositivo_verificado_${widget.familiaLogada}', true);
+
+      if (!mounted) return;
+      // Manda o cara pro menu de avatares com o selo carimbado!
+      Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+              builder: (context) => const TelaLogin(manterDesbloqueado: true)));
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content:
+              Text('Código Inválido!', style: TextStyle(color: Colors.white)),
+          backgroundColor: Colors.red));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    bool isDark = Theme.of(context).brightness == Brightness.dark;
+    Color corFundo = isDark ? const Color(0xFF121212) : Colors.green.shade50;
+
+    return Scaffold(
+      backgroundColor: corFundo,
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        leading: IconButton(
+            icon: const Icon(Icons.arrow_back, color: Colors.green),
+            onPressed: () => Navigator.pop(context)),
+      ),
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 500),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 35),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.mark_email_read,
+                    size: 80, color: Colors.green),
+                const SizedBox(height: 20),
+                const Text('Verificação de Segurança',
+                    style:
+                        TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 10),
+                if (_enviandoEmail) ...[
+                  const CircularProgressIndicator(color: Colors.green),
+                  const SizedBox(height: 15),
+                  const Text(
+                      'Conectando aos servidores DOUB e enviando código...',
+                      style: TextStyle(color: Colors.grey),
+                      textAlign: TextAlign.center),
+                ] else if (_erroNoEnvio) ...[
+                  const Icon(Icons.error_outline, color: Colors.red, size: 50),
+                  const Text('Ops! O servidor de e-mails não respondeu.',
+                      style: TextStyle(color: Colors.red)),
+                ] else ...[
+                  Text(
+                      'Enviamos um código de 8 dígitos para o e-mail cadastrado na família ${widget.familiaLogada}.\n\nPor favor, digite-o abaixo:',
+                      style: const TextStyle(color: Colors.grey),
+                      textAlign: TextAlign.center),
+                  const SizedBox(height: 30),
+                  TextField(
+                    controller: _codigoCtrl,
+                    textCapitalization: TextCapitalization.characters,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                        fontSize: 24,
+                        letterSpacing: 5,
+                        fontWeight: FontWeight.bold),
+                    maxLength: 8,
+                    decoration: InputDecoration(
+                      hintText: 'A1B2C3D4',
+                      filled: true,
+                      fillColor: isDark ? Colors.grey.shade900 : Colors.white,
+                      border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide.none),
+                      counterText: '', // Esconde o "0/8" embaixo
+                    ),
+                  ),
+                  const SizedBox(height: 25),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 50,
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xff235224),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
+                      ),
+                      onPressed: _verificarCodigo,
+                      child: const Text('VERIFICAR DISPOSITIVO',
+                          style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                              letterSpacing: 1.5)),
+                    ),
+                  ),
+                ]
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
