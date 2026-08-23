@@ -576,201 +576,207 @@ class _TelaLoginState extends State<TelaLogin> {
                     AnimatedOpacity(
                       duration: const Duration(milliseconds: 800),
                       opacity: _mostrarRestoDaTela ? 1.0 : 0.0,
-                      child: Column(
-                        children: [
-                          // =======================================================
-                          // ESTADO 1: FORMULÁRIO DIRETO NA TELA (Sem pop-up)
-                          // =======================================================
-                          if (!_familiaDesbloqueada) ...[
-                            Padding(
-                              padding:
-                                  const EdgeInsets.symmetric(horizontal: 35),
-                              child: Column(
-                                children: [
-                                  const SizedBox(height: 20),
-                                  TextField(
-                                    controller: _usuarioCtrl,
-                                    textCapitalization:
-                                        TextCapitalization.characters,
-                                    decoration: InputDecoration(
-                                      labelText: 'Usuário',
-                                      filled: true,
-                                      fillColor: isDark
-                                          ? Colors.grey.shade900
-                                          : Colors.white,
-                                      border: OutlineInputBorder(
-                                          borderRadius:
-                                              BorderRadius.circular(12),
-                                          borderSide: BorderSide.none),
-                                      prefixIcon: const Icon(Icons.group),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 15),
-                                  TextField(
-                                    controller: _senhaCtrl,
-                                    obscureText: !_mostrarSenha,
-                                    onSubmitted: (_) => _tentarLoginDireto(),
-                                    decoration: InputDecoration(
-                                      labelText: 'Senha',
-                                      filled: true,
-                                      fillColor: isDark
-                                          ? Colors.grey.shade900
-                                          : Colors.white,
-                                      border: OutlineInputBorder(
-                                          borderRadius:
-                                              BorderRadius.circular(12),
-                                          borderSide: BorderSide.none),
-                                      prefixIcon: const Icon(Icons.lock),
-                                      suffixIcon: IconButton(
-                                        icon: Icon(
-                                            _mostrarSenha
-                                                ? Icons.visibility
-                                                : Icons.visibility_off,
-                                            color: Colors.grey),
-                                        onPressed: () => setState(() =>
-                                            _mostrarSenha = !_mostrarSenha),
-                                      ),
-                                    ),
-                                  ),
-                                  if (_loginIncorreto) ...[
-                                    const SizedBox(height: 10),
-                                    const Text('Usuário ou senha incorretos!',
-                                        style: TextStyle(
-                                            color: Colors.red,
-                                            fontWeight: FontWeight.bold,
-                                            fontSize: 13)),
-                                  ],
-                                  const SizedBox(height: 25),
-                                  SizedBox(
-                                    width: double.infinity,
-                                    height: 50,
-                                    child: ElevatedButton(
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: Color(0xff235224),
-                                        shape: RoundedRectangleBorder(
+                    // 👇 ADICIONE ESTAS 3 LINHAS ANTES DA SUA COLUMN 👇
+widget(
+  child:   Center(
+    child: ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 500),  
+                        child: Column(
+                          children: [
+                            // =======================================================
+                            // ESTADO 1: FORMULÁRIO DIRETO NA TELA (Sem pop-up)
+                            // =======================================================
+                            if (!_familiaDesbloqueada) ...[
+                              Padding(
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 35),
+                                child: Column(
+                                  children: [
+                                    const SizedBox(height: 20),
+                                    TextField(
+                                      controller: _usuarioCtrl,
+                                      textCapitalization:
+                                          TextCapitalization.characters,
+                                      decoration: InputDecoration(
+                                        labelText: 'Usuário',
+                                        filled: true,
+                                        fillColor: isDark
+                                            ? Colors.grey.shade900
+                                            : Colors.white,
+                                        border: OutlineInputBorder(
                                             borderRadius:
-                                                BorderRadius.circular(12)),
+                                                BorderRadius.circular(12),
+                                            borderSide: BorderSide.none),
+                                        prefixIcon: const Icon(Icons.group),
                                       ),
-                                      onPressed: _tentarLoginDireto,
-                                      child: const Text('ENTRAR',
-                                          style: TextStyle(
-                                              fontSize: 16,
-                                              fontWeight: FontWeight.normal,
-                                              color: Colors.white,
-                                              letterSpacing: 1.5)),
                                     ),
-                                  ),
+                                    const SizedBox(height: 15),
+                                    TextField(
+                                      controller: _senhaCtrl,
+                                      obscureText: !_mostrarSenha,
+                                      onSubmitted: (_) => _tentarLoginDireto(),
+                                      decoration: InputDecoration(
+                                        labelText: 'Senha',
+                                        filled: true,
+                                        fillColor: isDark
+                                            ? Colors.grey.shade900
+                                            : Colors.white,
+                                        border: OutlineInputBorder(
+                                            borderRadius:
+                                                BorderRadius.circular(12),
+                                            borderSide: BorderSide.none),
+                                        prefixIcon: const Icon(Icons.lock),
+                                        suffixIcon: IconButton(
+                                          icon: Icon(
+                                              _mostrarSenha
+                                                  ? Icons.visibility
+                                                  : Icons.visibility_off,
+                                              color: Colors.grey),
+                                          onPressed: () => setState(() =>
+                                              _mostrarSenha = !_mostrarSenha),
+                                        ),
+                                      ),
+                                    ),
+                                    if (_loginIncorreto) ...[
+                                      const SizedBox(height: 10),
+                                      const Text('Usuário ou senha incorretos!',
+                                          style: TextStyle(
+                                              color: Colors.red,
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 13)),
+                                    ],
+                                    const SizedBox(height: 25),
+                                    SizedBox(
+                                      width: double.infinity,
+                                      height: 50,
+                                      child: ElevatedButton(
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: Color(0xff235224),
+                                          shape: RoundedRectangleBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(12)),
+                                        ),
+                                        onPressed: _tentarLoginDireto,
+                                        child: const Text('ENTRAR',
+                                            style: TextStyle(
+                                                fontSize: 16,
+                                                fontWeight: FontWeight.normal,
+                                                color: Colors.white,
+                                                letterSpacing: 1.5)),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              )
+                            ]
+                            // =======================================================
+                            // ESTADO 2: FAMÍLIA LOGADA (Mostra os Avatares Direto!)
+                            // =======================================================
+                            else ...[
+                              Text('Família $_nomeFamiliaAtual',
+                                  style: const TextStyle(
+                                      fontSize: 18,
+                                      color: Colors.green,
+                                      fontWeight: FontWeight.bold)),
+                              const SizedBox(height: 30),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  // --- PERFIL EDUARDO ---
+                                  GestureDetector(
+                                      onTap: () => _entrarNoPerfilDireto(
+                                          context, 'Eduardo'),
+                                      child: Column(children: [
+                                        Container(
+                                          padding: const EdgeInsets.all(15),
+                                          decoration: BoxDecoration(
+                                              color: Colors.blue
+                                                  .withValues(alpha: 0.1),
+                                              shape: BoxShape.circle,
+                                              border: Border.all(
+                                                  color: Colors.blue, width: 2)),
+                                          child: const Icon(Icons.person,
+                                              size: 50, color: Colors.blue),
+                                        ),
+                                        const SizedBox(height: 10),
+                                        Text('Eduardo',
+                                            style: TextStyle(
+                                                fontSize: 16,
+                                                fontWeight: FontWeight.bold,
+                                                color: isDark
+                                                    ? Colors.white
+                                                    : Colors.black))
+                                      ])),
+                                  const SizedBox(width: 40),
+                                  // --- PERFIL NAIUB ---
+                                  GestureDetector(
+                                      onTap: () =>
+                                          _entrarNoPerfilDireto(context, 'Naiub'),
+                                      child: Column(children: [
+                                        Container(
+                                          padding: const EdgeInsets.all(15),
+                                          decoration: BoxDecoration(
+                                              color: Colors.purple
+                                                  .withValues(alpha: 0.1),
+                                              shape: BoxShape.circle,
+                                              border: Border.all(
+                                                  color: Colors.purple,
+                                                  width: 2)),
+                                          child: const Icon(Icons.person,
+                                              size: 50, color: Colors.purple),
+                                        ),
+                                        const SizedBox(height: 10),
+                                        Text('Naiub',
+                                            style: TextStyle(
+                                                fontSize: 16,
+                                                fontWeight: FontWeight.bold,
+                                                color: isDark
+                                                    ? Colors.white
+                                                    : Colors.black))
+                                      ])),
                                 ],
                               ),
-                            )
-                          ]
-                          // =======================================================
-                          // ESTADO 2: FAMÍLIA LOGADA (Mostra os Avatares Direto!)
-                          // =======================================================
-                          else ...[
-                            Text('Família $_nomeFamiliaAtual',
-                                style: const TextStyle(
-                                    fontSize: 18,
-                                    color: Colors.green,
-                                    fontWeight: FontWeight.bold)),
-                            const SizedBox(height: 30),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                // --- PERFIL EDUARDO ---
-                                GestureDetector(
-                                    onTap: () => _entrarNoPerfilDireto(
-                                        context, 'Eduardo'),
-                                    child: Column(children: [
-                                      Container(
-                                        padding: const EdgeInsets.all(15),
-                                        decoration: BoxDecoration(
-                                            color: Colors.blue
-                                                .withValues(alpha: 0.1),
-                                            shape: BoxShape.circle,
-                                            border: Border.all(
-                                                color: Colors.blue, width: 2)),
-                                        child: const Icon(Icons.person,
-                                            size: 50, color: Colors.blue),
-                                      ),
-                                      const SizedBox(height: 10),
-                                      Text('Eduardo',
-                                          style: TextStyle(
-                                              fontSize: 16,
-                                              fontWeight: FontWeight.bold,
-                                              color: isDark
-                                                  ? Colors.white
-                                                  : Colors.black))
-                                    ])),
-                                const SizedBox(width: 40),
-                                // --- PERFIL NAIUB ---
-                                GestureDetector(
-                                    onTap: () =>
-                                        _entrarNoPerfilDireto(context, 'Naiub'),
-                                    child: Column(children: [
-                                      Container(
-                                        padding: const EdgeInsets.all(15),
-                                        decoration: BoxDecoration(
-                                            color: Colors.purple
-                                                .withValues(alpha: 0.1),
-                                            shape: BoxShape.circle,
-                                            border: Border.all(
-                                                color: Colors.purple,
-                                                width: 2)),
-                                        child: const Icon(Icons.person,
-                                            size: 50, color: Colors.purple),
-                                      ),
-                                      const SizedBox(height: 10),
-                                      Text('Naiub',
-                                          style: TextStyle(
-                                              fontSize: 16,
-                                              fontWeight: FontWeight.bold,
-                                              color: isDark
-                                                  ? Colors.white
-                                                  : Colors.black))
-                                    ])),
-                              ],
-                            ),
-                            const SizedBox(height: 30),
-                            TextButton(
-                              onPressed: () async {
-                                final prefs =
-                                    await SharedPreferences.getInstance();
-                                await prefs.remove('familiaAberta');
-                                setState(() {
-                                  _usuarioCtrl.clear();
-                                  _senhaCtrl.clear();
-                                  _familiaDesbloqueada = false;
-                                  _nomeFamiliaAtual = '';
-                                });
-                              },
-                              child: const Text('Sair da Família',
-                                  style: TextStyle(
-                                      color: Colors.grey, fontSize: 15)),
-                            )
+                              const SizedBox(height: 30),
+                              TextButton(
+                                onPressed: () async {
+                                  final prefs =
+                                      await SharedPreferences.getInstance();
+                                  await prefs.remove('familiaAberta');
+                                  setState(() {
+                                    _usuarioCtrl.clear();
+                                    _senhaCtrl.clear();
+                                    _familiaDesbloqueada = false;
+                                    _nomeFamiliaAtual = '';
+                                  });
+                                },
+                                child: const Text('Sair da Família',
+                                    style: TextStyle(
+                                        color: Colors.grey, fontSize: 15)),
+                              )
+                            ],
                           ],
-                        ],
-                      ),
-                    ),
-                    const Spacer(flex: 2),
-
-                    // O RODAPÉ VEIO PARA DENTRO DA ÁREA FLEXÍVEL
-                    AnimatedOpacity(
-                      duration: const Duration(milliseconds: 800),
-                      opacity: _mostrarRestoDaTela ? 1.0 : 0.0,
-                      child: Padding(
-                        padding: const EdgeInsets.only(bottom: 20.0),
-                        child: Text(
-                          'Versão 2.0\n© ${DateTime.now().year} DOUB. Todos os direitos reservados.',
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                              fontSize: 14.5,
-                              color: Color(0xffcdcaca),
-                              fontWeight: FontWeight.w500),
                         ),
                       ),
-                    ),
-                  ],
+                      const Spacer(flex: 2),
+  
+                      // O RODAPÉ VEIO PARA DENTRO DA ÁREA FLEXÍVEL
+                      AnimatedOpacity(
+                        duration: const Duration(milliseconds: 800),
+                        opacity: _mostrarRestoDaTela ? 1.0 : 0.0,
+                        child: Padding(
+                          padding: const EdgeInsets.only(bottom: 20.0),
+                          child: Text(
+                            'Versão 2.0\n© ${DateTime.now().year} DOUB. Todos os direitos reservados.',
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                                fontSize: 14.5,
+                                color: Color(0xffcdcaca),
+                                fontWeight: FontWeight.w500),
+                          ),
+                        ),
+                      ),
+                    ,
+)],
                 ),
               ),
             ),
