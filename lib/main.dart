@@ -275,14 +275,6 @@ void abrirConfiguracoes(BuildContext context) {
       });
 }
 
-// =======================================================
-// INÍCIO DA TELA DE LOGIN ESTILO NETFLIX (DIRETO NA TELA) 🎬
-// =======================================================
-
-// =======================================================
-// INÍCIO DA TELA DE LOGIN ESTILO NETFLIX (BLINDADA CONTRA ERROS) 🎬
-// =======================================================
-
 class TelaLogin extends StatefulWidget {
   final bool manterDesbloqueado;
 
@@ -460,323 +452,318 @@ class _TelaLoginState extends State<TelaLogin> {
       // 👇 A MÁGICA CONTRA A TELA ZEBRADA: LayoutBuilder + IntrinsicHeight
       body: LayoutBuilder(
         builder: (context, constraints) {
-          return SingleChildScrollView(
-            child: ConstrainedBox(
-              constraints: BoxConstraints(
-                minHeight: constraints
-                    .maxHeight, // 👈 Força a altura mínima pra tela toda
-              ),
-              child: IntrinsicHeight(
-                // 👈 Deixa a tela crescer como elástico se o teclado subir
-                child: Column(
-                  children: [
-                    // O Motor da Animação (Reduzido para 20% para caber o form!)
-                    AnimatedContainer(
-                      duration: const Duration(milliseconds: 1000),
-                      curve: Curves.easeInOut,
-                      height:
-                          _moverParaCima ? 80 : constraints.maxHeight * 0.38,
-                    ),
-                    SizedBox(
-                      height: 120,
-                      child: Stack(
-                        alignment: Alignment.center,
-                        clipBehavior: Clip.none,
+          var children2 = [
+            // O Motor da Animação (Reduzido para 20% para caber o form!)
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 1000),
+              curve: Curves.easeInOut,
+              height: _moverParaCima ? 80 : constraints.maxHeight * 0.38,
+            ),
+            SizedBox(
+              height: 120,
+              child: Stack(
+                alignment: Alignment.center,
+                clipBehavior: Clip.none,
+                children: [
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 1000),
+                    curve: Curves.easeOutBack,
+                    transform: Matrix4.translationValues(
+                        0, _mostrarFinancas ? 35.0 : 0.0, 0),
+                    child: AnimatedOpacity(
+                      duration: const Duration(milliseconds: 800),
+                      opacity: _mostrarFinancas ? 1.0 : 0.0,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
-                          AnimatedContainer(
-                            duration: const Duration(milliseconds: 1000),
-                            curve: Curves.easeOutBack,
-                            transform: Matrix4.translationValues(
-                                0, _mostrarFinancas ? 35.0 : 0.0, 0),
-                            child: AnimatedOpacity(
-                              duration: const Duration(milliseconds: 800),
-                              opacity: _mostrarFinancas ? 1.0 : 0.0,
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Container(
-                                      width: 30,
-                                      height: 1.5,
-                                      color: Colors.white),
-                                  const Padding(
-                                    padding:
-                                        EdgeInsets.symmetric(horizontal: 8.0),
-                                    child: Text('FINANÇAS',
-                                        style: TextStyle(
-                                            fontSize: 14,
-                                            color: Colors.white,
-                                            fontWeight: FontWeight.normal,
-                                            letterSpacing: 2)),
-                                  ),
-                                  Container(
-                                      width: 30,
-                                      height: 1.5,
-                                      color: Colors.white),
-                                ],
-                              ),
-                            ),
+                          Container(
+                              width: 30, height: 1.5, color: Colors.white),
+                          const Padding(
+                            padding: EdgeInsets.symmetric(horizontal: 8.0),
+                            child: Text('FINANÇAS',
+                                style: TextStyle(
+                                    fontSize: 14,
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.normal,
+                                    letterSpacing: 2)),
                           ),
                           Container(
-                            height: 48,
-                            padding: const EdgeInsets.symmetric(horizontal: 20),
-                            alignment: Alignment.center,
-                            child: Stack(
-                              clipBehavior: Clip.none,
-                              children: [
-                                Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    const Text('D',
-                                        style: TextStyle(
-                                            fontFamily: 'TabPearl',
-                                            fontSize: 35,
-                                            fontWeight: FontWeight.bold,
-                                            color: Colors.white)),
-                                    AnimatedContainer(
-                                      duration:
-                                          const Duration(milliseconds: 1500),
-                                      curve: Curves.easeOutQuart,
-                                      width: _mostrarDoub ? 105.0 : 0.0,
-                                      child: const ClipRect(
-                                        child: OverflowBox(
-                                          alignment: Alignment.centerLeft,
-                                          maxWidth: 105.0,
-                                          minWidth: 105.0,
-                                          child: Text('OUB',
-                                              style: TextStyle(
-                                                  fontFamily: 'TabPearl',
-                                                  fontSize: 35,
-                                                  fontWeight: FontWeight.bold,
-                                                  color: Colors.white,
-                                                  letterSpacing: 2),
-                                              maxLines: 1,
-                                              softWrap: false),
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                if (isNatal())
-                                  Positioned(
-                                      top: -20,
-                                      left: -25,
-                                      child: Image.asset(
-                                          'assets/imagens/chapeu_natal.png',
-                                          width: 55,
-                                          height: 55)),
-                              ],
-                            ),
-                          ),
+                              width: 30, height: 1.5, color: Colors.white),
                         ],
                       ),
                     ),
-                    const Spacer(),
-
-                    // A REVELAÇÃO DO CONTEÚDO
-                    AnimatedOpacity(
-                      duration: const Duration(milliseconds: 800),
-                      opacity: _mostrarRestoDaTela ? 1.0 : 0.0,
-                    // 👇 ADICIONE ESTAS 3 LINHAS ANTES DA SUA COLUMN 👇
-widget(
-  child:   Center(
-    child: ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 500),  
-                        child: Column(
+                  ),
+                  Container(
+                    height: 48,
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    alignment: Alignment.center,
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
                           children: [
-                            // =======================================================
-                            // ESTADO 1: FORMULÁRIO DIRETO NA TELA (Sem pop-up)
-                            // =======================================================
-                            if (!_familiaDesbloqueada) ...[
-                              Padding(
-                                padding:
-                                    const EdgeInsets.symmetric(horizontal: 35),
-                                child: Column(
-                                  children: [
-                                    const SizedBox(height: 20),
-                                    TextField(
-                                      controller: _usuarioCtrl,
-                                      textCapitalization:
-                                          TextCapitalization.characters,
-                                      decoration: InputDecoration(
-                                        labelText: 'Usuário',
-                                        filled: true,
-                                        fillColor: isDark
-                                            ? Colors.grey.shade900
-                                            : Colors.white,
-                                        border: OutlineInputBorder(
-                                            borderRadius:
-                                                BorderRadius.circular(12),
-                                            borderSide: BorderSide.none),
-                                        prefixIcon: const Icon(Icons.group),
-                                      ),
-                                    ),
-                                    const SizedBox(height: 15),
-                                    TextField(
-                                      controller: _senhaCtrl,
-                                      obscureText: !_mostrarSenha,
-                                      onSubmitted: (_) => _tentarLoginDireto(),
-                                      decoration: InputDecoration(
-                                        labelText: 'Senha',
-                                        filled: true,
-                                        fillColor: isDark
-                                            ? Colors.grey.shade900
-                                            : Colors.white,
-                                        border: OutlineInputBorder(
-                                            borderRadius:
-                                                BorderRadius.circular(12),
-                                            borderSide: BorderSide.none),
-                                        prefixIcon: const Icon(Icons.lock),
-                                        suffixIcon: IconButton(
-                                          icon: Icon(
-                                              _mostrarSenha
-                                                  ? Icons.visibility
-                                                  : Icons.visibility_off,
-                                              color: Colors.grey),
-                                          onPressed: () => setState(() =>
-                                              _mostrarSenha = !_mostrarSenha),
-                                        ),
-                                      ),
-                                    ),
-                                    if (_loginIncorreto) ...[
-                                      const SizedBox(height: 10),
-                                      const Text('Usuário ou senha incorretos!',
-                                          style: TextStyle(
-                                              color: Colors.red,
-                                              fontWeight: FontWeight.bold,
-                                              fontSize: 13)),
-                                    ],
-                                    const SizedBox(height: 25),
-                                    SizedBox(
-                                      width: double.infinity,
-                                      height: 50,
-                                      child: ElevatedButton(
-                                        style: ElevatedButton.styleFrom(
-                                          backgroundColor: Color(0xff235224),
-                                          shape: RoundedRectangleBorder(
-                                              borderRadius:
-                                                  BorderRadius.circular(12)),
-                                        ),
-                                        onPressed: _tentarLoginDireto,
-                                        child: const Text('ENTRAR',
-                                            style: TextStyle(
-                                                fontSize: 16,
-                                                fontWeight: FontWeight.normal,
-                                                color: Colors.white,
-                                                letterSpacing: 1.5)),
-                                      ),
-                                    ),
-                                  ],
+                            const Text('D',
+                                style: TextStyle(
+                                    fontFamily: 'TabPearl',
+                                    fontSize: 35,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white)),
+                            AnimatedContainer(
+                              duration: const Duration(milliseconds: 1500),
+                              curve: Curves.easeOutQuart,
+                              width: _mostrarDoub ? 105.0 : 0.0,
+                              child: const ClipRect(
+                                child: OverflowBox(
+                                  alignment: Alignment.centerLeft,
+                                  maxWidth: 105.0,
+                                  minWidth: 105.0,
+                                  child: Text('OUB',
+                                      style: TextStyle(
+                                          fontFamily: 'TabPearl',
+                                          fontSize: 35,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.white,
+                                          letterSpacing: 2),
+                                      maxLines: 1,
+                                      softWrap: false),
                                 ),
-                              )
-                            ]
-                            // =======================================================
-                            // ESTADO 2: FAMÍLIA LOGADA (Mostra os Avatares Direto!)
-                            // =======================================================
-                            else ...[
-                              Text('Família $_nomeFamiliaAtual',
-                                  style: const TextStyle(
-                                      fontSize: 18,
-                                      color: Colors.green,
-                                      fontWeight: FontWeight.bold)),
-                              const SizedBox(height: 30),
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  // --- PERFIL EDUARDO ---
-                                  GestureDetector(
-                                      onTap: () => _entrarNoPerfilDireto(
-                                          context, 'Eduardo'),
-                                      child: Column(children: [
-                                        Container(
-                                          padding: const EdgeInsets.all(15),
-                                          decoration: BoxDecoration(
-                                              color: Colors.blue
-                                                  .withValues(alpha: 0.1),
-                                              shape: BoxShape.circle,
-                                              border: Border.all(
-                                                  color: Colors.blue, width: 2)),
-                                          child: const Icon(Icons.person,
-                                              size: 50, color: Colors.blue),
-                                        ),
-                                        const SizedBox(height: 10),
-                                        Text('Eduardo',
-                                            style: TextStyle(
-                                                fontSize: 16,
-                                                fontWeight: FontWeight.bold,
-                                                color: isDark
-                                                    ? Colors.white
-                                                    : Colors.black))
-                                      ])),
-                                  const SizedBox(width: 40),
-                                  // --- PERFIL NAIUB ---
-                                  GestureDetector(
-                                      onTap: () =>
-                                          _entrarNoPerfilDireto(context, 'Naiub'),
-                                      child: Column(children: [
-                                        Container(
-                                          padding: const EdgeInsets.all(15),
-                                          decoration: BoxDecoration(
-                                              color: Colors.purple
-                                                  .withValues(alpha: 0.1),
-                                              shape: BoxShape.circle,
-                                              border: Border.all(
-                                                  color: Colors.purple,
-                                                  width: 2)),
-                                          child: const Icon(Icons.person,
-                                              size: 50, color: Colors.purple),
-                                        ),
-                                        const SizedBox(height: 10),
-                                        Text('Naiub',
-                                            style: TextStyle(
-                                                fontSize: 16,
-                                                fontWeight: FontWeight.bold,
-                                                color: isDark
-                                                    ? Colors.white
-                                                    : Colors.black))
-                                      ])),
-                                ],
                               ),
-                              const SizedBox(height: 30),
-                              TextButton(
-                                onPressed: () async {
-                                  final prefs =
-                                      await SharedPreferences.getInstance();
-                                  await prefs.remove('familiaAberta');
-                                  setState(() {
-                                    _usuarioCtrl.clear();
-                                    _senhaCtrl.clear();
-                                    _familiaDesbloqueada = false;
-                                    _nomeFamiliaAtual = '';
-                                  });
-                                },
-                                child: const Text('Sair da Família',
-                                    style: TextStyle(
-                                        color: Colors.grey, fontSize: 15)),
-                              )
-                            ],
+                            ),
                           ],
                         ),
-                      ),
-                      const Spacer(flex: 2),
-  
-                      // O RODAPÉ VEIO PARA DENTRO DA ÁREA FLEXÍVEL
-                      AnimatedOpacity(
-                        duration: const Duration(milliseconds: 800),
-                        opacity: _mostrarRestoDaTela ? 1.0 : 0.0,
-                        child: Padding(
-                          padding: const EdgeInsets.only(bottom: 20.0),
-                          child: Text(
-                            'Versão 2.0\n© ${DateTime.now().year} DOUB. Todos os direitos reservados.',
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(
-                                fontSize: 14.5,
-                                color: Color(0xffcdcaca),
-                                fontWeight: FontWeight.w500),
+                        if (isNatal())
+                          Positioned(
+                              top: -20,
+                              left: -25,
+                              child: Image.asset(
+                                  'assets/imagens/chapeu_natal.png',
+                                  width: 55,
+                                  height: 55)),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Spacer(),
+
+            // A REVELAÇÃO DO CONTEÚDO
+            // A REVELAÇÃO DO CONTEÚDO
+            AnimatedOpacity(
+              duration: const Duration(milliseconds: 800),
+              opacity: _mostrarRestoDaTela ? 1.0 : 0.0,
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 500),
+                  child: Column(
+                    children: [
+                      // =======================================================
+                      // ESTADO 1: FORMULÁRIO DIRETO NA TELA (Sem pop-up)
+                      // =======================================================
+                      if (!_familiaDesbloqueada) ...[
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 35),
+                          child: Column(
+                            children: [
+                              const SizedBox(height: 20),
+                              TextField(
+                                controller: _usuarioCtrl,
+                                textCapitalization:
+                                    TextCapitalization.characters,
+                                decoration: InputDecoration(
+                                  labelText: 'Usuário',
+                                  filled: true,
+                                  fillColor: isDark
+                                      ? Colors.grey.shade900
+                                      : Colors.white,
+                                  border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                      borderSide: BorderSide.none),
+                                  prefixIcon: const Icon(Icons.group),
+                                ),
+                              ),
+                              const SizedBox(height: 15),
+                              TextField(
+                                controller: _senhaCtrl,
+                                obscureText: !_mostrarSenha,
+                                onSubmitted: (_) => _tentarLoginDireto(),
+                                decoration: InputDecoration(
+                                  labelText: 'Senha',
+                                  filled: true,
+                                  fillColor: isDark
+                                      ? Colors.grey.shade900
+                                      : Colors.white,
+                                  border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                      borderSide: BorderSide.none),
+                                  prefixIcon: const Icon(Icons.lock),
+                                  suffixIcon: IconButton(
+                                    icon: Icon(
+                                        _mostrarSenha
+                                            ? Icons.visibility
+                                            : Icons.visibility_off,
+                                        color: Colors.grey),
+                                    onPressed: () => setState(
+                                        () => _mostrarSenha = !_mostrarSenha),
+                                  ),
+                                ),
+                              ),
+                              if (_loginIncorreto) ...[
+                                const SizedBox(height: 10),
+                                const Text('Usuário ou senha incorretos!',
+                                    style: TextStyle(
+                                        color: Colors.red,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 13)),
+                              ],
+                              const SizedBox(height: 25),
+                              SizedBox(
+                                width: double.infinity,
+                                height: 50,
+                                child: ElevatedButton(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Color(0xff235224),
+                                    shape: RoundedRectangleBorder(
+                                        borderRadius:
+                                            BorderRadius.circular(12)),
+                                  ),
+                                  onPressed: _tentarLoginDireto,
+                                  child: const Text('ENTRAR',
+                                      style: TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.normal,
+                                          color: Colors.white,
+                                          letterSpacing: 1.5)),
+                                ),
+                              ),
+                            ],
                           ),
+                        )
+                      ]
+                      // =======================================================
+                      // ESTADO 2: FAMÍLIA LOGADA (Mostra os Avatares Direto!)
+                      // =======================================================
+                      else ...[
+                        Text('Família $_nomeFamiliaAtual',
+                            style: const TextStyle(
+                                fontSize: 18,
+                                color: Colors.green,
+                                fontWeight: FontWeight.bold)),
+                        const SizedBox(height: 30),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            // --- PERFIL EDUARDO ---
+                            GestureDetector(
+                                onTap: () =>
+                                    _entrarNoPerfilDireto(context, 'Eduardo'),
+                                child: Column(children: [
+                                  Container(
+                                    padding: const EdgeInsets.all(15),
+                                    decoration: BoxDecoration(
+                                        color:
+                                            Colors.blue.withValues(alpha: 0.1),
+                                        shape: BoxShape.circle,
+                                        border: Border.all(
+                                            color: Colors.blue, width: 2)),
+                                    child: const Icon(Icons.person,
+                                        size: 50, color: Colors.blue),
+                                  ),
+                                  const SizedBox(height: 10),
+                                  Text('Eduardo',
+                                      style: TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.bold,
+                                          color: isDark
+                                              ? Colors.white
+                                              : Colors.black))
+                                ])),
+                            const SizedBox(width: 40),
+                            // --- PERFIL NAIUB ---
+                            GestureDetector(
+                                onTap: () =>
+                                    _entrarNoPerfilDireto(context, 'Naiub'),
+                                child: Column(children: [
+                                  Container(
+                                    padding: const EdgeInsets.all(15),
+                                    decoration: BoxDecoration(
+                                        color: Colors.purple
+                                            .withValues(alpha: 0.1),
+                                        shape: BoxShape.circle,
+                                        border: Border.all(
+                                            color: Colors.purple, width: 2)),
+                                    child: const Icon(Icons.person,
+                                        size: 50, color: Colors.purple),
+                                  ),
+                                  const SizedBox(height: 10),
+                                  Text('Naiub',
+                                      style: TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.bold,
+                                          color: isDark
+                                              ? Colors.white
+                                              : Colors.black))
+                                ])),
+                          ],
                         ),
-                      ),
-                    ,
-)],
+                        const SizedBox(height: 30),
+                        TextButton(
+                          onPressed: () async {
+                            final prefs = await SharedPreferences.getInstance();
+                            await prefs.remove('familiaAberta');
+                            setState(() {
+                              _usuarioCtrl.clear();
+                              _senhaCtrl.clear();
+                              _familiaDesbloqueada = false;
+                              _nomeFamiliaAtual = '';
+                            });
+                          },
+                          child: const Text('Sair da Família',
+                              style:
+                                  TextStyle(color: Colors.grey, fontSize: 15)),
+                        )
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            const Spacer(flex: 2),
+
+            // O RODAPÉ VEIO PARA DENTRO DA ÁREA FLEXÍVEL
+            AnimatedOpacity(
+              duration: const Duration(milliseconds: 800),
+              opacity: _mostrarRestoDaTela ? 1.0 : 0.0,
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: 20.0),
+                child: Text(
+                  'Versão 2.0\n© ${DateTime.now().year} DOUB. Todos os direitos reservados.',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                      fontSize: 14.5,
+                      color: Color(0xffcdcaca),
+                      fontWeight: FontWeight.w500),
+                ),
+              ),
+            ), // AnimatedOpacity
+          ]; // 👈 Fim da lista children2!
+
+          // 👇 O RETORNO DA TELA, AGORA CENTRALIZADO PARA O PC 👇
+          return Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 500),
+              child: SingleChildScrollView(
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    minHeight: constraints.maxHeight, // 👈 Agora ele reconhece!
+                  ),
+                  child: IntrinsicHeight(
+                    child: Column(
+                      children:
+                          children2, // 👈 E agora ele reconhece a lista também!
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -790,7 +777,6 @@ widget(
 // =======================================================
 // FIM DA TELA DE LOGIN 🎬
 // =======================================================
-
 // =======================================================
 // FIM DA TELA DE LOGIN 🎬
 // =======================================================
