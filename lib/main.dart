@@ -5051,8 +5051,8 @@ class _TelaCadastroFamiliaState extends State<TelaCadastroFamilia> {
   final _confirmaSenhaCtrl = TextEditingController();
   bool _mostrarSenha = false;
 
-  void _tentarCadastrar() {
-    // Validações visuais simples (Ainda não salva no banco, isso é Fase 2!)
+  void _tentarCadastrar() async {
+    // 1. Validações visuais simples
     if (_emailCtrl.text.isEmpty ||
         _donoCtrl.text.isEmpty ||
         _familiaCtrl.text.isEmpty ||
@@ -5071,12 +5071,79 @@ class _TelaCadastroFamiliaState extends State<TelaCadastroFamilia> {
       return;
     }
 
-    // Mensagem de sucesso temporária
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text(
-            'Visual validado! Na Fase 2 conectaremos isso ao Banco de Dados.',
-            style: TextStyle(color: Colors.white)),
-        backgroundColor: Colors.green));
+    String familiaId = _familiaCtrl.text.trim().toUpperCase();
+
+    try {
+      // 2. Verifica se essa família já existe no banco
+      var docCheck = await FirebaseFirestore.instance
+          .collection('familias')
+          .doc(familiaId)
+          .get();
+      if (docCheck.exists) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Este nome de família já está em uso!',
+                style: TextStyle(color: Colors.white)),
+            backgroundColor: Colors.red));
+        return;
+      }
+
+      // 3. Salva a nova família no Firestore
+      await FirebaseFirestore.instance
+          .collection('familias')
+          .doc(familiaId)
+          .set({
+        'dono': _donoCtrl.text.trim(),
+        'email': _emailCtrl.text.trim(),
+        'senha': _senhaCtrl.text.trim(),
+      });
+
+      // 4. Cria as categorias padrão já atreladas à nova família
+      var dbCats = FirebaseFirestore.instance.collection('categorias');
+      await dbCats.add({
+        'nome': 'Mercado',
+        'icone': Icons.shopping_cart.codePoint,
+        'cor': Colors.green.toARGB32(),
+        'ativo': true,
+        'familiaId': familiaId
+      });
+      await dbCats.add({
+        'nome': 'Combustível',
+        'icone': Icons.local_gas_station.codePoint,
+        'cor': Colors.orange.toARGB32(),
+        'ativo': true,
+        'familiaId': familiaId
+      });
+      await dbCats.add({
+        'nome': 'Lazer',
+        'icone': Icons.movie.codePoint,
+        'cor': Colors.purple.toARGB32(),
+        'ativo': true,
+        'familiaId': familiaId
+      });
+      await dbCats.add({
+        'nome': 'Contas Fixas',
+        'icone': Icons.home.codePoint,
+        'cor': Colors.blue.toARGB32(),
+        'ativo': true,
+        'familiaId': familiaId
+      });
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Família cadastrada com sucesso! Faça seu login.',
+              style: TextStyle(color: Colors.white)),
+          backgroundColor: Colors.green));
+
+      // 5. Volta para a tela de login
+      Navigator.pop(context);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Erro ao cadastrar: $e',
+              style: const TextStyle(color: Colors.white)),
+          backgroundColor: Colors.red));
+    }
   }
 
   @override
