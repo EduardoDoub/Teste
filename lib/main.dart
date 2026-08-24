@@ -10,7 +10,7 @@ import 'dart:math';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:http/http.dart' as http; // 👉 NOVO IMPORT AQUI!
 
-const int BUILD_INTERNO = 5;
+const int BUILD_INTERNO = 6;
 
 final ValueNotifier<ThemeMode> appThemeMode = ValueNotifier(ThemeMode.dark);
 final ValueNotifier<double> appTextScale = ValueNotifier(1.0);
@@ -885,7 +885,7 @@ class _TelaLoginState extends State<TelaLogin> {
                                 textCapitalization:
                                     TextCapitalization.characters,
                                 decoration: InputDecoration(
-                                  labelText: 'Usuário',
+                                  labelText: 'Nome da Família',
                                   filled: true,
                                   fillColor: isDark
                                       ? Colors.grey.shade900
@@ -924,7 +924,8 @@ class _TelaLoginState extends State<TelaLogin> {
                               ),
                               if (_loginIncorreto) ...[
                                 const SizedBox(height: 10),
-                                const Text('Usuário ou senha incorretos!',
+                                const Text(
+                                    'Nome da Família ou senha incorretos!',
                                     style: TextStyle(
                                         color: Colors.red,
                                         fontWeight: FontWeight.bold,
@@ -2440,7 +2441,7 @@ class _TelaNavegacaoState extends State<TelaNavegacao> {
                   child: Text('DOUB',
                       style: TextStyle(
                           fontFamily: 'TabPearl',
-                          fontSize: 13,
+                          fontSize: 15,
                           fontWeight: FontWeight.w900,
                           letterSpacing: 1.2,
                           color: Colors.white)),
@@ -3919,14 +3920,37 @@ class TelaLancamentos extends StatelessWidget {
               }
 
               if (listaFinal.isEmpty) {
-                return const Center(
-                    child: Text('Nenhuma conta ou fatura neste mês.',
-                        style: TextStyle(fontSize: 16)));
+                return RefreshIndicator(
+                  color: Colors.green,
+                  onRefresh: () async {
+                    // Como o Firebase já é em tempo real, damos um respiro visual de 800ms
+                    await Future.delayed(const Duration(milliseconds: 800));
+                  },
+                  child: ListView(
+                    physics:
+                        const AlwaysScrollableScrollPhysics(), // 👉 Permite puxar mesmo se a tela estiver vazia!
+                    children: const [
+                      SizedBox(height: 150),
+                      Center(
+                          child: Text('Nenhuma conta ou fatura neste mês.',
+                              style: TextStyle(fontSize: 16))),
+                    ],
+                  ),
+                );
               }
-              return ListView(
-                padding: const EdgeInsets.only(
-                    bottom: 100), // 👈 Mola invisível de 100 pixels no final!
-                children: listaFinal,
+
+              return RefreshIndicator(
+                color: Colors.green,
+                onRefresh: () async {
+                  await Future.delayed(const Duration(milliseconds: 800));
+                },
+                child: ListView(
+                  physics:
+                      const AlwaysScrollableScrollPhysics(), // 👉 Garante o gesto fluido!
+                  padding: const EdgeInsets.only(
+                      bottom: 100), // Mola invisível de 100 pixels no final!
+                  children: listaFinal,
+                ),
               );
             },
           )),
@@ -5545,8 +5569,69 @@ class _EstatisticasMensal extends StatelessWidget {
             .where('data', isLessThan: Timestamp.fromDate(fim))
             .snapshots(),
         builder: (context, snapshot) {
+          // 👇 SE ESTIVER CARREGANDO, MOSTRA O ESQUELETO DOS CARDS EM VEZ DA BOLINHA!
           if (!snapshot.hasData) {
-            return const Center(child: CircularProgressIndicator());
+            return ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                // Esqueleto do Card Principal de Totais
+                Container(
+                  height: 180,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1E1E1E),
+                    borderRadius: BorderRadius.circular(15),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(20),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Container(
+                                width: 90, height: 14, color: Colors.white12),
+                            Container(
+                                width: 70, height: 14, color: Colors.white12),
+                          ],
+                        ),
+                        const SizedBox(height: 20),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Container(
+                                width: 110, height: 14, color: Colors.white12),
+                            Container(
+                                width: 70, height: 14, color: Colors.white12),
+                          ],
+                        ),
+                        const Divider(
+                            height: 30, thickness: 1.5, color: Colors.white10),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Container(
+                                width: 100, height: 16, color: Colors.white12),
+                            Container(
+                                width: 90, height: 28, color: Colors.white12),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                // Esqueleto do Botão de Categorias
+                Container(
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1A1A1A),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.white12),
+                  ),
+                ),
+              ],
+            );
           }
 
           double totalSaidas = 0;
@@ -5805,7 +5890,7 @@ class _TelaCadastroFamiliaState extends State<TelaCadastroFamilia> {
                   controller: _emailCtrl,
                   keyboardType: TextInputType.emailAddress,
                   decoration: InputDecoration(
-                    labelText: 'E-mail (Para o Código de Segurança)',
+                    labelText: 'E-mail',
                     filled: true,
                     fillColor: isDark ? Colors.grey.shade900 : Colors.white,
                     border: OutlineInputBorder(
@@ -5819,7 +5904,7 @@ class _TelaCadastroFamiliaState extends State<TelaCadastroFamilia> {
                   controller: _donoCtrl,
                   textCapitalization: TextCapitalization.words,
                   decoration: InputDecoration(
-                    labelText: 'Seu Nome (Dono da Conta)',
+                    labelText: 'Seu Nome',
                     filled: true,
                     fillColor: isDark ? Colors.grey.shade900 : Colors.white,
                     border: OutlineInputBorder(
@@ -5833,7 +5918,7 @@ class _TelaCadastroFamiliaState extends State<TelaCadastroFamilia> {
                   controller: _familiaCtrl,
                   textCapitalization: TextCapitalization.characters,
                   decoration: InputDecoration(
-                    labelText: 'Nome da Família (Será o seu Login)',
+                    labelText: 'Nome da Família',
                     filled: true,
                     fillColor: isDark ? Colors.grey.shade900 : Colors.white,
                     border: OutlineInputBorder(
