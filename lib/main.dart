@@ -743,7 +743,7 @@ class _TelaLoginState extends State<TelaLogin> {
         }
 
         // 👇 ADICIONAMOS O AWAIT PARA ESPERAR O RESULTADO DA TELA DE 2FA
-        final sucesso2FA = await Navigator.push(
+        Navigator.push(
           context,
           MaterialPageRoute(
             builder: (context) => TelaVerificacao2FA(
@@ -753,16 +753,6 @@ class _TelaLoginState extends State<TelaLogin> {
             ),
           ),
         );
-
-        // 👇 SE A VERIFICAÇÃO DEU CERTO, ATUALIZAMOS A TELA AQUI TAMBÉM!
-        if (sucesso2FA == true) {
-          await prefs.setString('familiaAberta', familiaDigitada);
-          setState(() {
-            _nomeFamiliaAtual = familiaDigitada;
-            _familiaDesbloqueada = true;
-            _loginIncorreto = false;
-          });
-        }
       }
     } else {
       setState(() => _loginIncorreto = true);
@@ -6100,13 +6090,16 @@ class _TelaVerificacao2FAState extends State<TelaVerificacao2FA> {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool(
           'dispositivo_verificado_${widget.familiaLogada}', true);
+      await prefs.setString('familiaAberta', widget.familiaLogada);
 
       if (!mounted) return;
       // Manda o cara pro menu de avatares com o selo carimbado!
-      Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-              builder: (context) => const TelaLogin(manterDesbloqueado: true)));
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(
+            builder: (context) => const TelaLogin(manterDesbloqueado: true)),
+        (route) => false,
+      );
     } else {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content:
