@@ -1203,7 +1203,7 @@ class _TelaLoginState extends State<TelaLogin> {
               child: Padding(
                 padding: const EdgeInsets.only(bottom: 20.0),
                 child: Text(
-                  'Build 7.0\n© ${DateTime.now().year} DOUB. Todos os direitos reservados.',
+                  'Build 8.0\n© ${DateTime.now().year} DOUB. Todos os direitos reservados.',
                   textAlign: TextAlign.center,
                   style: const TextStyle(
                       fontSize: 14.5,
@@ -2828,24 +2828,30 @@ class _TabAnual extends StatelessWidget {
             Color corMacro = Colors.grey;
             String nomeDetalhe = '';
 
+            // 👇 A MÁGICA DA EXPLOSÃO DE CATEGORIAS COMEÇA AQUI!
             if (d['isPoupanca'] == true) {
               nomeMacro = 'Poupança';
               corMacro = Colors.blue;
-              nomeDetalhe = 'Depósitos na Poupança';
+              nomeDetalhe = d['descricao'] ?? 'Depósito';
             } else if (d['isParcelamento'] == true || d['isCartao'] == true) {
               nomeMacro = 'Parcelamentos';
-              corMacro = Colors.purple;
-              nomeDetalhe = 'Faturas e Cotas';
+              corMacro = const Color(0xff9c27b0);
+              nomeDetalhe = d['descricao'] ?? 'Faturas e Cotas';
             } else {
-              nomeMacro = 'Outros Gastos';
-              corMacro = const Color(0xFFFF9800);
+              // ADEUS "OUTROS GASTOS"! Puxamos a categoria real do banco:
               var cats = d['categorias'] ?? [];
               String idCat = cats.isNotEmpty ? cats[0].toString() : '';
 
-              // 👇 Usando a memória RAM (cacheCategoriasGeral) ao invés do Firebase!
               var catInfo = cacheCategoriasGeral[idCat];
-              nomeDetalhe =
+              nomeMacro =
                   catInfo != null ? (catInfo['nome'] ?? 'Outros') : 'Outros';
+              int corValor = catInfo != null
+                  ? (catInfo['cor'] ?? Colors.grey.value)
+                  : Colors.grey.value;
+              corMacro = Color(corValor);
+
+              // O detalhe que aparece no pop-up vira o nome da compra em si
+              nomeDetalhe = d['descricao'] ?? 'Gasto Avulso';
             }
 
             var catData = totaisCategorias[nomeMacro] ??
@@ -2889,6 +2895,9 @@ class _TabAnual extends StatelessWidget {
             'Nov',
             'Dez'
           ];
+
+          double totalGastoAno =
+              listaCategorias.fold(0.0, (s, item) => s + item['valor']);
 
           return ListView(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
@@ -2969,10 +2978,12 @@ class _TabAnual extends StatelessWidget {
                       mainAxisAlignment: MainAxisAlignment.end,
                       children: [
                         barraFinal,
-                        const SizedBox(height: 12),
+                        const SizedBox(height: 14),
                         Text(mesesAbrev[index],
                             style: const TextStyle(
-                                fontSize: 12, color: Colors.grey)),
+                              fontSize: 14,
+                              color: Color(0xffdedcdc),
+                            )),
                       ],
                     );
                   }),
@@ -2982,7 +2993,12 @@ class _TabAnual extends StatelessWidget {
               const SizedBox(height: 5),
               const Divider(color: Colors.white10),
               const SizedBox(height: 5),
+
+              // 👇 LISTA EXPLODIDA COM AS CORES E NOMES REAIS
               ...listaCategorias.map((f) {
+                double percentual = totalGastoAno > 0
+                    ? (f['valor'] / totalGastoAno) * 100
+                    : 0.0;
                 return InkWell(
                   onTap: () => _mostrarDetalhesFatia(context, f),
                   borderRadius: BorderRadius.circular(8),
@@ -3000,7 +3016,10 @@ class _TabAnual extends StatelessWidget {
                         const SizedBox(width: 16),
                         Text(f['nome'],
                             style: const TextStyle(
-                                fontSize: 15, color: Colors.white70)),
+                                fontSize: 15, color: Colors.white)),
+                        Text('   ( ${percentual.toStringAsFixed(1)}% )',
+                            style: const TextStyle(
+                                fontSize: 14, color: Color(0xfff4bdbd))),
                         const Spacer(),
                         Text(
                             'R\$ ${f['valor'].toStringAsFixed(2).replaceAll('.', ',')}',
@@ -3013,6 +3032,30 @@ class _TabAnual extends StatelessWidget {
                   ),
                 );
               }),
+
+              // 👇 NOVIDADE: A LINHA DO TOTALIZADOR DO ANO!
+              const Divider(color: Colors.white24, height: 30),
+              Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('Total Gasto no Ano',
+                        style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold)),
+                    Text(
+                        'R\$ ${listaCategorias.fold(0.0, (s, item) => s + item['valor']).toStringAsFixed(2).replaceAll('.', ',')}',
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold)),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 20),
             ],
           );
         });
@@ -5536,7 +5579,7 @@ class _TelaEstatisticasState extends State<TelaEstatisticas>
             labelColor: const Color(0xFF00E676),
             unselectedLabelColor: Colors.grey,
             tabs: const [
-              Tab(text: 'Mensal (Pizza)'),
+              Tab(text: 'Balanço Mensal'),
               Tab(text: 'Balanço Anual'),
             ],
           ),
