@@ -11,6 +11,7 @@ import 'dart:math';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:http/http.dart' as http; // 👉 NOVO IMPORT AQUI!
 
+//
 const int BUILD_INTERNO = 7;
 
 final ValueNotifier<ThemeMode> appThemeMode = ValueNotifier(ThemeMode.dark);
