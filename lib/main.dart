@@ -742,7 +742,8 @@ class _TelaLoginState extends State<TelaLogin> {
           return;
         }
 
-        Navigator.push(
+        // 👇 ADICIONAMOS O AWAIT PARA ESPERAR O RESULTADO DA TELA DE 2FA
+        final sucesso2FA = await Navigator.push(
           context,
           MaterialPageRoute(
             builder: (context) => TelaVerificacao2FA(
@@ -752,6 +753,16 @@ class _TelaLoginState extends State<TelaLogin> {
             ),
           ),
         );
+
+        // 👇 SE A VERIFICAÇÃO DEU CERTO, ATUALIZAMOS A TELA AQUI TAMBÉM!
+        if (sucesso2FA == true) {
+          await prefs.setString('familiaAberta', familiaDigitada);
+          setState(() {
+            _nomeFamiliaAtual = familiaDigitada;
+            _familiaDesbloqueada = true;
+            _loginIncorreto = false;
+          });
+        }
       }
     } else {
       setState(() => _loginIncorreto = true);
@@ -806,7 +817,7 @@ class _TelaLoginState extends State<TelaLogin> {
                             padding: EdgeInsets.symmetric(horizontal: 8.0),
                             child: Text('FINANÇAS',
                                 style: TextStyle(
-                                    fontSize: 14,
+                                    fontSize: 15,
                                     color: Colors.white,
                                     fontWeight: FontWeight.normal,
                                     letterSpacing: 2)),
@@ -818,9 +829,11 @@ class _TelaLoginState extends State<TelaLogin> {
                     ),
                   ),
                   Container(
-                    height: 48,
-                    padding: const EdgeInsets.symmetric(horizontal: 20),
-                    alignment: Alignment.center,
+                    height: 55,
+
+                    padding: const EdgeInsets.only(
+                        left:
+                            5.0), // Vai empurrar o DOUB um pouquinho para a esquerda                    alignment: Alignment.center,
                     child: Stack(
                       clipBehavior: Clip.none,
                       children: [
