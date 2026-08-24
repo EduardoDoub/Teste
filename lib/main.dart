@@ -93,86 +93,6 @@ void main() async {
   runApp(const MyApp());
 }
 
-Future<void> _injetarConfiguracoesIniciaisBanco() async {
-  try {
-    // 👇 1. CRIA A FAMÍLIA DOUB NO BANCO SE ELA NÃO EXISTIR
-    var dbFamilias = FirebaseFirestore.instance.collection('familias');
-    var docDoub = await dbFamilias.doc('DOUB').get();
-    if (!docDoub.exists) {
-      await dbFamilias.doc('DOUB').set({
-        'senha': 'ADMIN123',
-        'dono': 'Eduardo',
-        'email': 'Eduardoliveira2003@gmail.com'
-      });
-    }
-
-    // 👇 2. A MIGRAÇÃO FORÇADA
-    // --- A. Usuários ---
-    var dbUsuarios = FirebaseFirestore.instance.collection('usuarios');
-    var usuariosGet = await dbUsuarios.get(); // Pega TODOS os usuários
-    for (var u in usuariosGet.docs) {
-      if (!(u.data() as Map).containsKey('familiaId')) {
-        await u.reference.update({'familiaId': 'DOUB'});
-      }
-    }
-
-    // --- B. Categorias ---
-    var dbCats = FirebaseFirestore.instance.collection('categorias');
-    var catsGet = await dbCats.get(); // Pega TODAS as categorias
-    if (catsGet.docs.isNotEmpty) {
-      for (var c in catsGet.docs) {
-        if (!(c.data() as Map).containsKey('familiaId')) {
-          await c.reference.update({'familiaId': 'DOUB'});
-        }
-      }
-    } else {
-      await dbCats.add({
-        'nome': 'Mercado',
-        'icone': Icons.shopping_cart.codePoint,
-        'cor': Colors.green.toARGB32(),
-        'ativo': true,
-        'familiaId': 'DOUB'
-      });
-      await dbCats.add({
-        'nome': 'Combustível',
-        'icone': Icons.local_gas_station.codePoint,
-        'cor': Colors.orange.toARGB32(),
-        'ativo': true,
-        'familiaId': 'DOUB'
-      });
-      await dbCats.add({
-        'nome': 'Lazer',
-        'icone': Icons.movie.codePoint,
-        'cor': Colors.purple.toARGB32(),
-        'ativo': true,
-        'familiaId': 'DOUB'
-      });
-      await dbCats.add({
-        'nome': 'Contas Fixas',
-        'icone': Icons.home.codePoint,
-        'cor': Colors.blue.toARGB32(),
-        'ativo': true,
-        'familiaId': 'DOUB'
-      });
-    }
-
-    // --- C. Lançamentos (O seu dinheiro!) ---
-    var dbLancamentos = FirebaseFirestore.instance.collection('lancamentos');
-    var lancamentosGet = await dbLancamentos.get(); // Pega TODOS os lançamentos
-    for (var l in lancamentosGet.docs) {
-      if (!(l.data() as Map).containsKey('familiaId')) {
-        await l.reference.update({'familiaId': 'DOUB'});
-      }
-    }
-
-    // 👇 3. CARREGA O CACHE APENAS DA FAMÍLIA ATUAL
-    // Como a tela de login já passou, a gente não vai carregar o cache aqui.
-    // O cache será carregado DEPOIS que o usuário logar, filtrando pela família dele.
-  } catch (e) {
-    debugPrint("Erro Init Migração: $e");
-  }
-}
-
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
   @override
@@ -732,7 +652,7 @@ class _TelaLoginState extends State<TelaLogin> {
   @override
   void initState() {
     super.initState();
-    Future.microtask(() => _injetarConfiguracoesIniciaisBanco());
+    //Future.microtask(() => _injetarConfiguracoesIniciaisBanco());
     _verificarFamiliaSalva();
 
     if (!widget.manterDesbloqueado) {
@@ -2506,11 +2426,9 @@ class _TelaNavegacaoState extends State<TelaNavegacao> {
           familiaLogada: widget.familiaLogada),
       appBar: AppBar(
         // 👇 2. ATUALIZAMOS OS TÍTULOS DO TOPO
-        title: Text(widget.familiaLogada,
-            style: const TextStyle(
-                color: Color(0xFF00E676),
-                fontWeight: FontWeight.bold,
-                letterSpacing: 2)),
+        toolbarHeight: 40.0, // 👉 ADICIONE ESTA LINHA AQUI! (O padrão é 56.0)
+        title: const SizedBox
+            .shrink(), // Se quiser o meio vazio, ou apague o title
         centerTitle: true,
         leadingWidth: 80,
         leading: Builder(
@@ -5855,6 +5773,7 @@ class _TelaCadastroFamiliaState extends State<TelaCadastroFamilia> {
     return Scaffold(
       backgroundColor: corFundo,
       appBar: AppBar(
+        toolbarHeight: 30.0, // 👉 ADICIONE ESTA LINHA AQUI! (O padrão é 56.0)
         backgroundColor: Colors.transparent,
         elevation: 0,
         leading: IconButton(
