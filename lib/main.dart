@@ -241,7 +241,8 @@ class MyApp extends StatelessWidget {
   }
 }
 
-void abrirConfiguracoes(BuildContext context) {
+void abrirConfiguracoes(BuildContext context, String familiaLogada) {
+  // 👉 RECEBE A FAMILIA
   showDialog(
       context: context,
       builder: (context) {
@@ -278,6 +279,16 @@ void abrirConfiguracoes(BuildContext context) {
                   }),
               const SizedBox(height: 10),
               const Divider(),
+              // 👇 NOVA OPÇÃO DE TROCAR A SENHA!
+              if (familiaLogada.isNotEmpty)
+                ListTile(
+                  leading: const Icon(Icons.password, color: Colors.blue),
+                  title: const Text('Alterar Senha da Família'),
+                  onTap: () {
+                    Navigator.pop(context); // Fecha config
+                    _abrirModalTrocarSenha(context, familiaLogada);
+                  },
+                ),
             ],
           ),
           actions: [
@@ -287,6 +298,122 @@ void abrirConfiguracoes(BuildContext context) {
           ],
         );
       });
+}
+
+// 👇 NOVA FUNÇÃO (Cole logo abaixo do método acima)
+void _abrirModalTrocarSenha(BuildContext context, String familia) {
+  final velhaCtrl = TextEditingController();
+  final novaCtrl = TextEditingController();
+  bool showPws = false;
+
+  showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+          builder: (c, setS) => AlertDialog(
+                title: const Text('Alterar Senha da Família'),
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                        controller: velhaCtrl,
+                        obscureText: !showPws,
+                        decoration: InputDecoration(
+                            labelText: 'Senha Atual',
+                            border: const OutlineInputBorder(),
+                            suffixIcon: IconButton(
+                                icon: Icon(
+                                    showPws
+                                        ? Icons.visibility
+                                        : Icons.visibility_off,
+                                    color: Colors.grey),
+                                onPressed: () =>
+                                    setS(() => showPws = !showPws)))),
+                    const SizedBox(height: 15),
+                    TextField(
+                        controller: novaCtrl,
+                        obscureText: !showPws,
+                        decoration: const InputDecoration(
+                            labelText: 'Nova Senha',
+                            border: OutlineInputBorder())),
+                  ],
+                ),
+                actions: [
+                  TextButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      child: const Text('Cancelar')),
+                  ElevatedButton(
+                    style:
+                        ElevatedButton.styleFrom(backgroundColor: Colors.blue),
+                    onPressed: () async {
+                      // Previne se o usuário apertar salvar sem digitar nada
+                      if (velhaCtrl.text.trim().isEmpty ||
+                          novaCtrl.text.trim().isEmpty) return;
+
+                      var doc = await FirebaseFirestore.instance
+                          .collection('familias')
+                          .doc(familia)
+                          .get();
+
+                      // ❌ ERRO: SENHA INCORRETA
+                      if (doc.data()?['senha'] != velhaCtrl.text.trim()) {
+                        showDialog(
+                            context: ctx,
+                            builder: (dCtx) => AlertDialog(
+                                    title: const Row(children: [
+                                      Icon(Icons.error, color: Colors.red),
+                                      SizedBox(width: 10),
+                                      Text('Erro',
+                                          style: TextStyle(color: Colors.red))
+                                    ]),
+                                    content: const Text(
+                                        'A senha atual está incorreta!'),
+                                    actions: [
+                                      TextButton(
+                                          onPressed: () => Navigator.pop(dCtx),
+                                          child: const Text('Tentar novamente'))
+                                    ]));
+                        return;
+                      }
+
+                      // ✅ SUCESSO: SALVA A SENHA
+                      await doc.reference
+                          .update({'senha': novaCtrl.text.trim()});
+                      if (!ctx.mounted) return;
+
+                      // 👉 A MÁGICA: Mostra o sucesso por CIMA da janela atual!
+                      showDialog(
+                          context:
+                              ctx, // Usa o contexto da própria janela para não se perder!
+                          barrierDismissible:
+                              false, // Obriga o usuário a clicar no OK
+                          builder: (dCtx) => AlertDialog(
+                                  title: const Row(children: [
+                                    Icon(Icons.check_circle,
+                                        color: Colors.green),
+                                    SizedBox(width: 10),
+                                    Text('Sucesso!',
+                                        style: TextStyle(color: Colors.green))
+                                  ]),
+                                  content: const Text(
+                                      'A senha da sua família foi atualizada com sucesso.'),
+                                  actions: [
+                                    TextButton(
+                                        onPressed: () {
+                                          Navigator.pop(
+                                              dCtx); // 1. Fecha o aviso de sucesso
+                                          Navigator.pop(
+                                              ctx); // 2. Fecha a janela de trocar a senha
+                                        },
+                                        child: const Text('OK',
+                                            style: TextStyle(
+                                                fontWeight: FontWeight.bold)))
+                                  ]));
+                    },
+                    child: const Text('Salvar',
+                        style: TextStyle(color: Colors.white)),
+                  )
+                ],
+              )));
 }
 
 class TelaLogin extends StatefulWidget {
@@ -304,6 +431,7 @@ class _TelaLoginState extends State<TelaLogin> {
   late bool _mostrarFinancas = widget.manterDesbloqueado;
   late bool _moverParaCima = widget.manterDesbloqueado;
   late bool _mostrarRestoDaTela = widget.manterDesbloqueado;
+  bool _modoEdicaoAvatares = false; // 👉 ADICIONE ESTA LINHA AQUI!
 
   // 🔐 CONTROLE DA FAMÍLIA E FORMULÁRIO
   late bool _familiaDesbloqueada = widget.manterDesbloqueado;
@@ -905,6 +1033,12 @@ class _TelaLoginState extends State<TelaLogin> {
                               // 👇 ADICIONE ESTAS DUAS LINHAS AQUI 👇
                               const SizedBox(height: 15),
                               TextButton(
+                                onPressed: _iniciarRecuperacaoSenha,
+                                child: const Text('Esqueci a senha',
+                                    style: TextStyle(color: Colors.grey)),
+                              ),
+                              const SizedBox(height: 5), // Espaçamento
+                              TextButton(
                                 onPressed: () {
                                   Navigator.push(
                                       context,
@@ -926,12 +1060,33 @@ class _TelaLoginState extends State<TelaLogin> {
                       // ESTADO 2: FAMÍLIA LOGADA (Mostra os Avatares Direto!)
                       // =======================================================
                       else ...[
-                        Text('Família $_nomeFamiliaAtual',
-                            style: const TextStyle(
-                                fontSize: 18,
-                                color: Colors.green,
-                                fontWeight: FontWeight.bold)),
-                        const SizedBox(height: 30),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                                _modoEdicaoAvatares
+                                    ? 'Modo Edição'
+                                    : 'Família $_nomeFamiliaAtual', // 👉 O TEXTO MUDA AQUI!
+                                style: TextStyle(
+                                    fontSize: 18,
+                                    color: _modoEdicaoAvatares
+                                        ? Colors.orange
+                                        : Colors
+                                            .green, // 👉 FICA LARANJA NA EDIÇÃO!
+                                    fontWeight: FontWeight.bold)),
+                            const SizedBox(width: 8),
+                            IconButton(
+                              icon: Icon(Icons.settings,
+                                  color: _modoEdicaoAvatares
+                                      ? Colors.green
+                                      : Colors.grey,
+                                  size: 22),
+                              onPressed: () => setState(() =>
+                                  _modoEdicaoAvatares = !_modoEdicaoAvatares),
+                            )
+                          ],
+                        ),
+                        const SizedBox(height: 15),
                         // 👇 STREAMBUILDER DINÂMICO COM SUPORTE A CORES E EDIÇÃO!
                         StreamBuilder<QuerySnapshot>(
                           stream: FirebaseFirestore.instance
@@ -970,9 +1125,15 @@ class _TelaLoginState extends State<TelaLogin> {
                                     clipBehavior: Clip.none,
                                     children: [
                                       // BOTÃO DO PERFIL
+                                      // BOTÃO DO PERFIL
                                       GestureDetector(
-                                        onTap: () => _entrarNoPerfilDireto(
-                                            context, nomeUsuario),
+                                        onTap: () {
+                                          // 👉 SÓ ENTRA NO PERFIL SE NÃO ESTIVER EDITANDO!
+                                          if (!_modoEdicaoAvatares) {
+                                            _entrarNoPerfilDireto(
+                                                context, nomeUsuario);
+                                          }
+                                        },
                                         child: Column(
                                           children: [
                                             Container(
@@ -1002,69 +1163,76 @@ class _TelaLoginState extends State<TelaLogin> {
                                         ),
                                       ),
                                       // ✏️ BOTÃO DE EDIÇÃO (LÁPIS) NO CANTO DO AVATAR
-                                      Positioned(
-                                        right: 0,
-                                        top: 0,
-                                        child: InkWell(
-                                          onTap: () =>
-                                              _mostrarModalEditarMembro(context,
-                                                  docId, nomeUsuario, corValor),
-                                          child: Container(
-                                            padding: const EdgeInsets.all(6),
-                                            decoration: BoxDecoration(
-                                              color: isDark
-                                                  ? Colors.grey.shade800
-                                                  : Colors.white,
-                                              shape: BoxShape.circle,
-                                              boxShadow: [
-                                                BoxShadow(
-                                                    color: Colors.black12,
-                                                    blurRadius: 4)
-                                              ],
-                                              border: Border.all(
-                                                  color: Colors.grey.shade400),
+                                      if (_modoEdicaoAvatares) // 👉 ADICIONE ESTE IF AQUI!
+                                        Positioned(
+                                          right: 0,
+                                          top: 0,
+                                          child: InkWell(
+                                            onTap: () =>
+                                                _mostrarModalEditarMembro(
+                                                    context,
+                                                    docId,
+                                                    nomeUsuario,
+                                                    corValor),
+                                            child: Container(
+                                              padding: const EdgeInsets.all(6),
+                                              decoration: BoxDecoration(
+                                                color: isDark
+                                                    ? Colors.grey.shade800
+                                                    : Colors.white,
+                                                shape: BoxShape.circle,
+                                                boxShadow: [
+                                                  BoxShadow(
+                                                      color: Colors.black12,
+                                                      blurRadius: 4)
+                                                ],
+                                                border: Border.all(
+                                                    color:
+                                                        Colors.grey.shade400),
+                                              ),
+                                              child: const Icon(Icons.edit,
+                                                  size: 14, color: Colors.grey),
                                             ),
-                                            child: const Icon(Icons.edit,
-                                                size: 14, color: Colors.grey),
                                           ),
                                         ),
-                                      ),
                                     ],
                                   );
                                 }).toList(),
 
                                 // 2. BOTÃO DE ADICIONAR NOVO MEMBRO (+)
-                                GestureDetector(
-                                  onTap: () =>
-                                      _mostrarModalAdicionarMembro(context),
-                                  child: Column(
-                                    children: [
-                                      Container(
-                                        padding: const EdgeInsets.all(15),
-                                        decoration: BoxDecoration(
-                                          color: Colors.green
-                                              .withValues(alpha: 0.1),
-                                          shape: BoxShape.circle,
-                                          border: Border.all(
-                                              color: Colors.green,
-                                              width: 2,
-                                              style: BorderStyle.solid),
+                                // 2. BOTÃO DE ADICIONAR NOVO MEMBRO (+)
+                                if (_modoEdicaoAvatares) // 👉 ADICIONE ESTA LINHA AQUI! ELE SÓ VAI APARECER NA EDIÇÃO!
+                                  GestureDetector(
+                                    onTap: () =>
+                                        _mostrarModalAdicionarMembro(context),
+                                    child: Column(
+                                      children: [
+                                        Container(
+                                          padding: const EdgeInsets.all(15),
+                                          decoration: BoxDecoration(
+                                            color: Colors.green
+                                                .withValues(alpha: 0.1),
+                                            shape: BoxShape.circle,
+                                            border: Border.all(
+                                                color: Colors.green,
+                                                width: 2,
+                                                style: BorderStyle.solid),
+                                          ),
+                                          child: const Icon(Icons.add,
+                                              size: 50, color: Colors.green),
                                         ),
-                                        child: const Icon(Icons.add,
-                                            size: 50, color: Colors.green),
-                                      ),
-                                      const SizedBox(height: 10),
-                                      const Text(
-                                        'Adicionar',
-                                        style: TextStyle(
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.bold,
-                                          color: Colors.green,
+                                        const SizedBox(height: 10),
+                                        const Text(
+                                          'Adicionar',
+                                          style: TextStyle(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.green,
+                                          ),
                                         ),
-                                      ),
-                                    ],
+                                      ],
+                                    ),
                                   ),
-                                ),
                               ],
                             );
                           },
@@ -1133,6 +1301,151 @@ class _TelaLoginState extends State<TelaLogin> {
         },
       ),
     );
+  }
+
+// 👇 COLOQUE NO FINAL DA CLASSE _TelaLoginState
+  void _iniciarRecuperacaoSenha() async {
+    String familiaDigitada = _usuarioCtrl.text.trim().toUpperCase();
+    if (familiaDigitada.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Digite o nome da Família no campo "Usuário" primeiro!',
+              style: TextStyle(color: Colors.white)),
+          backgroundColor: Colors.red));
+      return;
+    }
+
+    var doc = await FirebaseFirestore.instance
+        .collection('familias')
+        .doc(familiaDigitada)
+        .get();
+    if (!doc.exists) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Família não encontrada!',
+              style: TextStyle(color: Colors.white)),
+          backgroundColor: Colors.red));
+      return;
+    }
+
+    String email = doc.data()!['email'] ?? '';
+    String dono = doc.data()!['dono'] ?? 'Membro';
+
+    if (email.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Esta família não tem e-mail cadastrado.',
+              style: TextStyle(color: Colors.white)),
+          backgroundColor: Colors.red));
+      return;
+    }
+
+    showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (c) => const Center(
+            child: CircularProgressIndicator(color: Colors.green)));
+
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    final rnd = Random.secure();
+    String codigoGerado = String.fromCharCodes(Iterable.generate(
+        8, (_) => chars.codeUnitAt(rnd.nextInt(chars.length))));
+
+    try {
+      final response = await http.post(
+        Uri.parse('https://doub-email-sender.eduardoliveira2003.workers.dev'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'emailDestino': email,
+          'nomeDono': dono,
+          'codigo2FA': codigoGerado
+        }),
+      );
+      if (!context.mounted) return;
+      Navigator.pop(context); // Fecha loading
+      if (response.statusCode == 200) {
+        _mostrarModalNovaSenha(familiaDigitada, codigoGerado);
+      } else {
+        throw Exception('Falha no servidor');
+      }
+    } catch (e) {
+      Navigator.pop(context); // Fecha loading
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Erro ao enviar e-mail: $e'),
+          backgroundColor: Colors.red));
+    }
+  }
+
+  void _mostrarModalNovaSenha(String familiaId, String codigoCorreto) {
+    final codigoCtrl = TextEditingController();
+    final novaSenhaCtrl = TextEditingController();
+    bool mostrar = false;
+    showDialog(
+        context: context,
+        builder: (ctx) => StatefulBuilder(
+            builder: (c, setS) => AlertDialog(
+                  title: const Text('Recuperação de Senha'),
+                  content: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text('Enviamos um código para o e-mail da família.',
+                          style: TextStyle(fontSize: 13, color: Colors.grey)),
+                      const SizedBox(height: 15),
+                      TextField(
+                          controller: codigoCtrl,
+                          textCapitalization: TextCapitalization.characters,
+                          decoration: const InputDecoration(
+                              labelText: 'Código de 8 dígitos',
+                              border: OutlineInputBorder())),
+                      const SizedBox(height: 15),
+                      TextField(
+                          controller: novaSenhaCtrl,
+                          obscureText: !mostrar,
+                          decoration: InputDecoration(
+                              labelText: 'Nova Senha',
+                              border: const OutlineInputBorder(),
+                              suffixIcon: IconButton(
+                                  icon: Icon(
+                                      mostrar
+                                          ? Icons.visibility
+                                          : Icons.visibility_off,
+                                      color: Colors.grey),
+                                  onPressed: () =>
+                                      setS(() => mostrar = !mostrar)))),
+                    ],
+                  ),
+                  actions: [
+                    TextButton(
+                        onPressed: () => Navigator.pop(ctx),
+                        child: const Text('Cancelar')),
+                    ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.green),
+                      onPressed: () async {
+                        if (codigoCtrl.text.trim().toUpperCase() !=
+                            codigoCorreto) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                  content: Text('Código inválido!',
+                                      style: TextStyle(color: Colors.white)),
+                                  backgroundColor: Colors.red));
+                          return;
+                        }
+                        if (novaSenhaCtrl.text.isEmpty) return;
+                        await FirebaseFirestore.instance
+                            .collection('familias')
+                            .doc(familiaId)
+                            .update({'senha': novaSenhaCtrl.text.trim()});
+                        if (!context.mounted) return;
+                        Navigator.pop(ctx);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                                content: Text('Senha alterada com sucesso!',
+                                    style: TextStyle(color: Colors.white)),
+                                backgroundColor: Colors.green));
+                      },
+                      child: const Text('Salvar Nova Senha',
+                          style: TextStyle(color: Colors.white)),
+                    )
+                  ],
+                )));
   }
 }
 
@@ -1657,7 +1970,7 @@ class MenuLateral extends StatelessWidget {
               title: const Text('Configurações'),
               onTap: () {
                 Navigator.pop(context);
-                abrirConfiguracoes(context);
+                abrirConfiguracoes(context, familiaLogada);
               }),
           ListTile(
               leading: const Icon(Icons.logout, color: Colors.red),
