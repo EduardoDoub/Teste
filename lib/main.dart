@@ -10,7 +10,7 @@ import 'dart:math';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:http/http.dart' as http; // 👉 NOVO IMPORT AQUI!
 
-const int BUILD_INTERNO = 4;
+const int BUILD_INTERNO = 5;
 
 final ValueNotifier<ThemeMode> appThemeMode = ValueNotifier(ThemeMode.dark);
 final ValueNotifier<double> appTextScale = ValueNotifier(1.0);
@@ -703,7 +703,8 @@ class _TelaLoginState extends State<TelaLogin> {
     Navigator.pushReplacement(
         context,
         MaterialPageRoute(
-            builder: (context) => TelaNavegacao(usuarioLogado: usuario)));
+            builder: (context) => TelaNavegacao(
+                usuarioLogado: usuario, familiaLogada: _nomeFamiliaAtual)));
   }
 
   @override
@@ -1099,7 +1100,7 @@ class _TelaLoginState extends State<TelaLogin> {
               child: Padding(
                 padding: const EdgeInsets.only(bottom: 20.0),
                 child: Text(
-                  'Versão 4.0\n© ${DateTime.now().year} DOUB. Todos os direitos reservados.',
+                  'Build 5.0\n© ${DateTime.now().year} DOUB. Todos os direitos reservados.',
                   textAlign: TextAlign.center,
                   style: const TextStyle(
                       fontSize: 14.5,
@@ -1631,7 +1632,8 @@ class MenuLateral extends StatelessWidget {
               accountName: Text(usuarioLogado,
                   style: const TextStyle(
                       fontSize: 22, fontWeight: FontWeight.bold)),
-              accountEmail: const Text('Gestor Financeiro DOUB'),
+              accountEmail:
+                  Text('Família: $familiaLogada'), // 👈 MUITO MAIS PROFISSIONAL
               decoration: const BoxDecoration(color: Color(0xff3d3d3d))),
           ListTile(
               leading: const Icon(Icons.newspaper, color: Colors.blue),
@@ -1958,7 +1960,9 @@ class CategoriaSelector extends StatelessWidget {
 
 class TelaNavegacao extends StatefulWidget {
   final String usuarioLogado;
-  const TelaNavegacao({super.key, required this.usuarioLogado});
+  final String familiaLogada; // 👉 RECEBENDO DA TELA DE LOGIN
+  const TelaNavegacao(
+      {super.key, required this.usuarioLogado, required this.familiaLogada});
   @override
   State<TelaNavegacao> createState() => _TelaNavegacaoState();
 }
@@ -1966,8 +1970,6 @@ class TelaNavegacao extends StatefulWidget {
 class _TelaNavegacaoState extends State<TelaNavegacao> {
   int _indiceAtual = 0;
   DateTime _dataSelecionada = obterMesContabil();
-
-  String _familiaLogada = '';
 
   @override
   void initState() {
@@ -1983,14 +1985,10 @@ class _TelaNavegacaoState extends State<TelaNavegacao> {
 
   // 👉 NOVIDADE: A função que faz o trabalho duro antes da tela aparecer
   void _carregarFamiliaECategorias() async {
-    final prefs = await SharedPreferences.getInstance();
-    _familiaLogada = prefs.getString('familiaAberta') ??
-        'DOUB'; // Pega a família do cofre ou assume DOUB
-
     // Carrega só as categorias da família que está logada!
     var catsGetCache = await FirebaseFirestore.instance
         .collection('categorias')
-        .where('familiaId', isEqualTo: _familiaLogada)
+        .where('familiaId', isEqualTo: widget.familiaLogada)
         .get();
 
     cacheCategoriasGeral.clear(); // Limpa a memória
@@ -2078,7 +2076,7 @@ class _TelaNavegacaoState extends State<TelaNavegacao> {
       var antigos = await FirebaseFirestore.instance
           .collection('lancamentos')
           .where('familiaId',
-              isEqualTo: _familiaLogada) // 👉 FILTRO ADICIONADO AQUI!
+              isEqualTo: widget.familiaLogada) // 👉 FILTRO ADICIONADO AQUI!
           .where('data', isLessThan: Timestamp.fromDate(limitePassado))
           .get();
       for (var doc in antigos.docs) {
@@ -2090,7 +2088,7 @@ class _TelaNavegacaoState extends State<TelaNavegacao> {
       var fixas = await FirebaseFirestore.instance
           .collection('lancamentos')
           .where('familiaId',
-              isEqualTo: _familiaLogada) // 👉 FILTRO ADICIONADO AQUI!
+              isEqualTo: widget.familiaLogada) // 👉 FILTRO ADICIONADO AQUI!
           .where('isContaFixa', isEqualTo: true)
           .get();
       Map<String, DocumentSnapshot> ultimaDeCadaGrupo = {};
@@ -2126,7 +2124,8 @@ class _TelaNavegacaoState extends State<TelaNavegacao> {
               'descricao': dados['descricao'],
               'valor': dados['valor'],
               'responsavel': dados['responsavel'],
-              'familiaId': _familiaLogada, // 👉 ETIQUETA DA FAMÍLIA ADICIONADA!
+              'familiaId':
+                  widget.familiaLogada, // 👉 ETIQUETA DA FAMÍLIA ADICIONADA!
               'data': Timestamp.fromDate(novaData),
               'isParcelamento': dados['isParcelamento'] ?? false,
               'isCartao': dados['isCartao'] ?? false,
@@ -2170,30 +2169,35 @@ class _TelaNavegacaoState extends State<TelaNavegacao> {
           mesAno: _dataSelecionada,
           aoMudarMes: _mudarMes,
           aoMudarMesEspecifico: _mudarParaMesEspecifico,
-          familiaLogada: _familiaLogada),
+          familiaLogada: widget.familiaLogada),
       // A nova tela que agrupa o cartão:
       TelaCartao(
           mesAno: _dataSelecionada,
           aoMudarMes: _mudarMes,
           usuarioLogado: widget.usuarioLogado,
-          familiaLogada: _familiaLogada), // 👉 ADICIONADO
+          familiaLogada: widget.familiaLogada), // 👉 ADICIONADO
       // A nova tela da Pizza:
       TelaEstatisticas(
           familiaLogada:
-              _familiaLogada), // 👉 REMOVIDO O "const" E ADICIONADO AQUI!
+              widget.familiaLogada), // 👉 REMOVIDO O "const" E ADICIONADO AQUI!
       TelaPoupanca(
           mesAno: _dataSelecionada,
           aoMudarMes: _mudarMes,
           usuarioLogado: widget.usuarioLogado,
-          familiaLogada: _familiaLogada), // 👉 ADICIONADO
+          familiaLogada: widget.familiaLogada), // 👉 ADICIONADO
     ];
 
     return Scaffold(
       drawer: MenuLateral(
-          usuarioLogado: widget.usuarioLogado, familiaLogada: _familiaLogada),
+          usuarioLogado: widget.usuarioLogado,
+          familiaLogada: widget.familiaLogada),
       appBar: AppBar(
         // 👇 2. ATUALIZAMOS OS TÍTULOS DO TOPO
-        title: Text(['', '', '', ''][_indiceAtual]),
+        title: Text(widget.familiaLogada,
+            style: const TextStyle(
+                color: Color(0xFF00E676),
+                fontWeight: FontWeight.bold,
+                letterSpacing: 2)),
         centerTitle: true,
         leadingWidth: 80,
         leading: Builder(
@@ -3354,8 +3358,8 @@ class TelaLancamentos extends StatelessWidget {
               // 👇 2. O DETETIVE: SE TIVER ERRO NO BANCO, ELE VAI MOSTRAR NA TELA!
               if (snapshotLanc.hasError) {
                 return Center(
-                    child: Text("Erro: ${snapshotLanc.error}",
-                        style: const TextStyle(color: Colors.white)));
+                    child: Text("Erro do Firebase: ${snapshotLanc.error}",
+                        style: const TextStyle(color: Colors.red)));
               }
 
               if (snapshotLanc.connectionState == ConnectionState.waiting) {
@@ -3369,13 +3373,8 @@ class TelaLancamentos extends StatelessWidget {
               if (snapshotLanc.hasData) {
                 // 👇 3. ORDENAMOS DIRETO NA MEMÓRIA DO CELULAR (MUITO MAIS RÁPIDO)
                 var docsOrdenados = snapshotLanc.data!.docs.toList();
-                docsOrdenados.sort((a, b) {
-                  var dataA =
-                      (a.data() as Map<String, dynamic>)['data'] as Timestamp;
-                  var dataB =
-                      (b.data() as Map<String, dynamic>)['data'] as Timestamp;
-                  return dataB.compareTo(dataA); // Mais recentes primeiro
-                });
+                docsOrdenados.sort((a, b) => (b.data() as Map)['data']
+                    .compareTo((a.data() as Map)['data']));
 
                 for (var doc in docsOrdenados) {
                   final dados = doc.data() as Map<String, dynamic>;
