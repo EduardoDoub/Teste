@@ -1,3 +1,4 @@
+import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -10,7 +11,7 @@ import 'dart:math';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:http/http.dart' as http; // 👉 NOVO IMPORT AQUI!
 
-const int BUILD_INTERNO = 6;
+const int BUILD_INTERNO = 7;
 
 final ValueNotifier<ThemeMode> appThemeMode = ValueNotifier(ThemeMode.dark);
 final ValueNotifier<double> appTextScale = ValueNotifier(1.0);
@@ -66,6 +67,16 @@ DateTime obterMesContabil() {
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+    statusBarColor: Color(0xFF1A1A1A), // Mesma cor exata do seu AppBar
+    statusBarIconBrightness:
+        Brightness.light, // Deixa os ícones (hora/bateria) brancos
+  ));
+
+  FlutterError.onError = (FlutterErrorDetails details) {
+    FlutterError.dumpErrorToConsole(details);
+  };
 
   FlutterError.onError = (FlutterErrorDetails details) {
     FlutterError.dumpErrorToConsole(details);
@@ -1189,7 +1200,7 @@ class _TelaLoginState extends State<TelaLogin> {
               child: Padding(
                 padding: const EdgeInsets.only(bottom: 20.0),
                 child: Text(
-                  'Build 5.0\n© ${DateTime.now().year} DOUB. Todos os direitos reservados.',
+                  'Build 7.0\n© ${DateTime.now().year} DOUB. Todos os direitos reservados.',
                   textAlign: TextAlign.center,
                   style: const TextStyle(
                       fontSize: 14.5,
