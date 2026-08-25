@@ -11,7 +11,7 @@ import 'dart:math';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:http/http.dart' as http; // 👉 NOVO IMPORT AQUI!
 
-const int BUILD_INTERNO = 7;
+const int BUILD_INTERNO = 9;
 
 final ValueNotifier<ThemeMode> appThemeMode = ValueNotifier(ThemeMode.dark);
 final ValueNotifier<double> appTextScale = ValueNotifier(1.0);
@@ -27,7 +27,7 @@ final Map<int, IconData> mapaDeIcones = {
   Icons.health_and_safety.codePoint: Icons.health_and_safety,
   Icons.category.codePoint: Icons.category,
 };
-// MEMÓRIA CACHE DAS CATEGORIAS PARA DEIXAR O APP NA VELOCIDADE DA LUZ
+
 Map<String, Map<String, dynamic>> cacheCategoriasGeral = {};
 
 String obterNomeMes(int mes) {
@@ -231,7 +231,6 @@ void abrirConfiguracoes(BuildContext context, String familiaLogada) {
       });
 }
 
-// 👇 NOVA FUNÇÃO (Cole logo abaixo do método acima)
 void _abrirModalTrocarSenha(BuildContext context, String familia) {
   final velhaCtrl = TextEditingController();
   final novaCtrl = TextEditingController();
@@ -1203,7 +1202,7 @@ class _TelaLoginState extends State<TelaLogin> {
               child: Padding(
                 padding: const EdgeInsets.only(bottom: 20.0),
                 child: Text(
-                  'Build 8.0\n© ${DateTime.now().year} DOUB. Todos os direitos reservados.',
+                  'Build 9.0\n© ${DateTime.now().year} DOUB. Todos os direitos reservados.',
                   textAlign: TextAlign.center,
                   style: const TextStyle(
                       fontSize: 14.5,
@@ -1238,7 +1237,6 @@ class _TelaLoginState extends State<TelaLogin> {
     );
   }
 
-// 👇 COLOQUE NO FINAL DA CLASSE _TelaLoginState
   void _iniciarRecuperacaoSenha() async {
     String familiaDigitada = _usuarioCtrl.text.trim().toUpperCase();
     if (familiaDigitada.isEmpty) {
@@ -1383,13 +1381,6 @@ class _TelaLoginState extends State<TelaLogin> {
                 )));
   }
 }
-
-// =======================================================
-// FIM DA TELA DE LOGIN 🎬
-// =======================================================
-// =======================================================
-// FIM DA TELA DE LOGIN 🎬
-// =======================================================
 
 void sairDoUsuario(BuildContext context) async {
   Navigator.pushReplacement(
@@ -1921,9 +1912,6 @@ class MenuLateral extends StatelessWidget {
   }
 }
 
-// =======================================================
-// SELETOR INTELIGENTE (Muda de Mês para Ano automaticamente) ⏳
-// =======================================================
 class SeletorMes extends StatelessWidget {
   final DateTime dataAtual;
   final Function(int) aoMudar;
@@ -2011,7 +1999,6 @@ class SeletorMes extends StatelessWidget {
   }
 }
 
-// 👇 1. AGORA RECEBE A FAMÍLIA COMO PARÂMETRO
 void _gerenciarCategorias(BuildContext context, String familiaLogada) {
   showModalBottomSheet(
       context: context,
@@ -2510,9 +2497,6 @@ class _TelaNavegacaoState extends State<TelaNavegacao> {
   }
 }
 
-// =======================================================
-// TELA RESUMO (AGORA LIMPA, SÓ COM OS CARDS DO MÊS)
-// =======================================================
 class TelaVisaoGeralTripla extends StatelessWidget {
   final DateTime mesAno;
   final Function(int) aoMudarMes;
@@ -2688,12 +2672,6 @@ class _TabMensal extends StatelessWidget {
   }
 }
 
-// =======================================================
-// TELA ANUAL (BOMBA ATÔMICA: GRADIENTE SÓLIDO PERFEITO) 📊📅
-// =======================================================
-// =======================================================
-// TELA ANUAL (MACRO-VISÃO: 3 CORES COM DETALHES CLICÁVEIS) 📊📅
-// =======================================================
 class _TabAnual extends StatelessWidget {
   final int ano;
   final String familiaLogada; // 👉 NOVA LINHA
@@ -2899,12 +2877,20 @@ class _TabAnual extends StatelessWidget {
           double totalGastoAno =
               listaCategorias.fold(0.0, (s, item) => s + item['valor']);
 
+          // 👇 1. O SEGREDO DO "HERO SECTION": Lemos a altura do celular!
+          double alturaTela = MediaQuery.of(context).size.height;
+
+          // 👇 2. Damos 55% da tela inteira apenas para o gráfico respirar
+          double alturaGrafico = alturaTela * 0.55;
+
           return ListView(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             children: [
-              const SizedBox(height: 30),
+              const SizedBox(height: 20),
+
+              // 👇 3. APLICAMOS A ALTURA GIGANTE AQUI!
               SizedBox(
-                height: 240,
+                height: alturaGrafico,
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -2912,9 +2898,13 @@ class _TabAnual extends StatelessWidget {
                     int mes = index + 1;
                     double totalMes =
                         mesesGrafico[mes]!.values.fold(0.0, (a, b) => a + b);
-                    double maxBarHeight = 180.0;
+
+                    // 👇 4. A BARRA CRESCE JUNTO (Descontamos 50px de folga pro texto dos meses)
+                    double maxBarHeight = alturaGrafico - 50.0;
 
                     Widget barraFinal;
+
+                    // O restante do seu if (totalMes == 0) continua igual aqui pra baixo...
 
                     if (totalMes == 0 || maxMesTotal == 0) {
                       barraFinal = Container(
@@ -3568,6 +3558,9 @@ class TelaLancamentos extends StatelessWidget {
                                           .collection('lancamentos')
                                           .where('grupoId',
                                               isEqualTo: dados['grupoId'])
+                                          .where('familiaId',
+                                              isEqualTo:
+                                                  familiaLogada) // 👉 A CHAVE MÁGICA QUE FALTAVA!
                                           .get();
                                       var batch =
                                           FirebaseFirestore.instance.batch();
@@ -3772,6 +3765,9 @@ class TelaLancamentos extends StatelessWidget {
                         var query = await FirebaseFirestore.instance
                             .collection('lancamentos')
                             .where('grupoId', isEqualTo: dados['grupoId'])
+                            .where('familiaId',
+                                isEqualTo:
+                                    familiaLogada) // 👉 A CHAVE MÁGICA QUE FALTAVA!
                             .get();
                         var batch = FirebaseFirestore.instance.batch();
                         for (var d in query.docs) {
@@ -3916,6 +3912,9 @@ class TelaLancamentos extends StatelessWidget {
                         var query = await FirebaseFirestore.instance
                             .collection('lancamentos')
                             .where('grupoId', isEqualTo: dados['grupoId'])
+                            .where('familiaId',
+                                isEqualTo:
+                                    familiaLogada) // 👉 A CHAVE MÁGICA QUE FALTAVA!
                             .get();
                         var batch = FirebaseFirestore.instance.batch();
                         for (var d in query.docs) {
@@ -4317,6 +4316,9 @@ class TelaParcelamentos extends StatelessWidget {
                                     .collection('lancamentos')
                                     .where('grupoId',
                                         isEqualTo: dados['grupoId'])
+                                    .where('familiaId',
+                                        isEqualTo:
+                                            familiaLogada) // 👉 A CHAVE MÁGICA QUE FALTAVA!
                                     .get();
                                 var batch = FirebaseFirestore.instance.batch();
                                 for (var d in query.docs) {
@@ -4395,6 +4397,9 @@ class TelaParcelamentos extends StatelessWidget {
                         var query = await FirebaseFirestore.instance
                             .collection('lancamentos')
                             .where('grupoId', isEqualTo: dados['grupoId'])
+                            .where('familiaId',
+                                isEqualTo:
+                                    familiaLogada) // 👉 A CHAVE MÁGICA QUE FALTAVA!
                             .get();
                         var batch = FirebaseFirestore.instance.batch();
 
@@ -4489,6 +4494,9 @@ class TelaParcelamentos extends StatelessWidget {
                           var query = await FirebaseFirestore.instance
                               .collection('lancamentos')
                               .where('grupoId', isEqualTo: dados['grupoId'])
+                              .where('familiaId',
+                                  isEqualTo:
+                                      familiaLogada) // 👉 A CHAVE MÁGICA QUE FALTAVA!
                               .get();
                           var batch = FirebaseFirestore.instance.batch();
                           for (var d in query.docs) {
@@ -4952,6 +4960,9 @@ class TelaPoupanca extends StatelessWidget {
                                               .collection('lancamentos')
                                               .where('grupoId',
                                                   isEqualTo: dados['grupoId'])
+                                              .where('familiaId',
+                                                  isEqualTo:
+                                                      familiaLogada) // 👉 A CHAVE MÁGICA QUE FALTAVA!
                                               .get();
                                           var batch = FirebaseFirestore.instance
                                               .batch();
@@ -5159,9 +5170,6 @@ class _NewsCardItemState extends State<NewsCardItem> {
   }
 }
 
-// =======================================================
-// NOVO COMPONENTE: PIZZA INTERATIVA COM LISTA DE GASTOS 🚀
-// =======================================================
 class PainelPizzaInterativa extends StatefulWidget {
   final List<Map<String, dynamic>> fatias;
   final double total;
@@ -5377,9 +5385,6 @@ class _PainelPizzaInterativaState extends State<PainelPizzaInterativa> {
   }
 }
 
-// =======================================================
-// O PINTOR DA ROSCA (CÍRCULO PERFEITO E ESTÁTICO) 🍩✨
-// =======================================================
 class GraficoPizza extends CustomPainter {
   final List<Map<String, dynamic>> fatias;
   final double total;
@@ -5449,9 +5454,6 @@ class GraficoPizza extends CustomPainter {
   }
 }
 
-// h
-// NOVA TELA: CARTÃO (AGRUPA CONTAS E PARCELAS EM ABAS) 💳
-// =======================================================
 class TelaCartao extends StatelessWidget {
   final DateTime mesAno;
   final Function(int) aoMudarMes;
@@ -5503,12 +5505,6 @@ class TelaCartao extends StatelessWidget {
   }
 }
 
-// =======================================================
-// TELA ESTATÍSTICAS (AGORA COM PIZZA E BALANÇO ANUAL) 📊
-// =======================================================
-// =======================================================
-// TELA DE ESTATÍSTICAS (Com Estado 100% Independente) 📊
-// =======================================================
 class TelaEstatisticas extends StatefulWidget {
   final String familiaLogada; // 👉 NOVA LINHA
   const TelaEstatisticas(
@@ -5604,7 +5600,6 @@ class _TelaEstatisticasState extends State<TelaEstatisticas>
   }
 }
 
-// O miolo da Estatística (Para o código não virar uma bagunça)
 class _EstatisticasMensal extends StatelessWidget {
   final DateTime mesAno;
   final String familiaLogada; // 👉 NOVA LINHA
@@ -5787,16 +5782,12 @@ class _EstatisticasMensal extends StatelessWidget {
   }
 }
 
-// Coloque isso solto no código ou dentro da sua classe de Login
 bool isNatal() {
   DateTime hoje = DateTime.now();
   // Se o mês for 12 (Dezembro), retorna true e liga o Natal! 🎄
   return hoje.month == 12;
 }
 
-// =======================================================
-// TELA DE CADASTRO DE NOVA FAMÍLIA 📝
-// =======================================================
 class TelaCadastroFamilia extends StatefulWidget {
   const TelaCadastroFamilia({super.key});
 
@@ -6050,9 +6041,6 @@ class _TelaCadastroFamiliaState extends State<TelaCadastroFamilia> {
   }
 }
 
-// =======================================================
-// TELA DE VERIFICAÇÃO EM DUAS ETAPAS (2FA CLOUDFLARE) 🔐
-// =======================================================
 class TelaVerificacao2FA extends StatefulWidget {
   final String familiaLogada;
   final String donoFamilia;
@@ -6244,5 +6232,3 @@ class _TelaVerificacao2FAState extends State<TelaVerificacao2FA> {
     );
   }
 }
-
-//
