@@ -11,7 +11,7 @@ import 'dart:math';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:http/http.dart' as http; // 👉 NOVO IMPORT AQUI!
 
-const int BUILD_INTERNO = 9;
+const int BUILD_INTERNO = 10;
 
 final ValueNotifier<ThemeMode> appThemeMode = ValueNotifier(ThemeMode.dark);
 final ValueNotifier<double> appTextScale = ValueNotifier(1.0);
@@ -1202,7 +1202,7 @@ class _TelaLoginState extends State<TelaLogin> {
               child: Padding(
                 padding: const EdgeInsets.only(bottom: 20.0),
                 child: Text(
-                  'Build 9.0\n© ${DateTime.now().year} DOUB. Todos os direitos reservados.',
+                  'Build 10\n© ${DateTime.now().year} DOUB. Todos os direitos reservados.',
                   textAlign: TextAlign.center,
                   style: const TextStyle(
                       fontSize: 14.5,
@@ -1479,8 +1479,12 @@ class MenuLateral extends StatelessWidget {
           .where('familiaId', isEqualTo: familiaLogada) // 👉 CORRIGIDO
           .where('data', isGreaterThanOrEqualTo: Timestamp.fromDate(inicio))
           .where('data', isLessThan: Timestamp.fromDate(fim))
-          .orderBy('data', descending: true)
           .get();
+
+      // 👇 Ordenação super rápida direto na memória do aparelho
+      var docsOrdenados = query.docs.toList();
+      docsOrdenados.sort((a, b) => (b.data() as Map<String, dynamic>)['data']
+          .compareTo((a.data() as Map<String, dynamic>)['data']));
 
       Map<String, dynamic> mData = {
         "mes": mesExportacao.month,
@@ -1493,8 +1497,8 @@ class MenuLateral extends StatelessWidget {
         "totPoupanca": 0.0
       };
 
-      for (var doc in query.docs) {
-        var d = doc.data();
+      for (var doc in docsOrdenados) {
+        var d = doc.data() as Map<String, dynamic>; // Mude para forçar o Map
         double val = (d['valor'] ?? 0.0).toDouble();
         String desc = (d['descricao'] ?? 'Sem nome').toString();
         String resp = (d['responsavel'] ?? 'N/A').toString();
@@ -1922,7 +1926,7 @@ class SeletorMes extends StatelessWidget {
     super.key,
     required this.dataAtual,
     required this.aoMudar,
-    this.travarFuturo = true,
+    this.travarFuturo = false,
     this.isAnual = false, // Por padrão é falso (Mostra o Mês normal)
   });
 
@@ -2468,19 +2472,6 @@ class _TelaNavegacaoState extends State<TelaNavegacao> {
         onTap: (indice) {
           setState(() {
             _indiceAtual = indice;
-
-            // 👇 O CINTO DE SEGURANÇA TEMPORAL!
-            if (indice != 1) {
-              DateTime hoje = DateTime.now();
-              // Agora a trava é cravada no mês e ano exatos de hoje
-              DateTime mesMaximo = DateTime(hoje.year, hoje.month);
-
-              if (_dataSelecionada.year > mesMaximo.year ||
-                  (_dataSelecionada.year == mesMaximo.year &&
-                      _dataSelecionada.month > mesMaximo.month)) {
-                _dataSelecionada = mesMaximo;
-              }
-            }
           });
         },
         // 👇 3. ATUALIZAMOS OS BOTÕES E ÍCONES DE BAIXO
@@ -2773,7 +2764,7 @@ class _TabAnual extends StatelessWidget {
           int mesLimite = 12;
 
           if (ano == hoje.year) {
-            mesLimite = hoje.day >= 5 ? hoje.month : hoje.month - 1;
+            mesLimite = hoje.day >= 1 ? hoje.month : hoje.month - 1;
           } else if (ano > hoje.year) {
             mesLimite = 0;
           }
@@ -5785,7 +5776,7 @@ class _EstatisticasMensal extends StatelessWidget {
 bool isNatal() {
   DateTime hoje = DateTime.now();
   // Se o mês for 12 (Dezembro), retorna true e liga o Natal! 🎄
-  return hoje.month == 12;
+  return hoje.month == 0;
 }
 
 class TelaCadastroFamilia extends StatefulWidget {
