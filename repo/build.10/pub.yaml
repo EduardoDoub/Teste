@@ -1,0 +1,48 @@
+name: helloworld
+description: Gestor Financeiro DOUB.
+publish_to: 'none'
+
+version: 1.0.0+10
+
+environment:
+  sdk: ^3.0.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  firebase_core: 3.10.0
+  cloud_firestore: any
+  url_launcher: ^6.2.6
+  http: ^1.2.1 # 👉 ADICIONAR ESTA LINHA!
+  shared_preferences: any 
+  flutter_localizations:
+    sdk: flutter
+  universal_html: ^2.3.0
+  upgrader: ^13.7.0
+  
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+  flutter_launcher_icons: ^0.13.1 
+
+flutter:
+  uses-material-design: true
+ #
+  assets:
+    - assets/imagens/
+    - assets/imagens/chapeu_natal.png
+    # - imagens/eduardo.png
+    # - imagens/naiub.png
+  # Cole esta parte logo abaixo do uses-material-design:
+  fonts:
+    - family: TabPearl
+      fonts:
+        - asset: assets/fonts/tan-pearl.otf
+  
+flutter_launcher_icons:
+  android: true
+  ios: false
+  image_path: "assets/logo.png"
+  

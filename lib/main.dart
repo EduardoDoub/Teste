@@ -9,9 +9,10 @@ import 'package:universal_html/html.dart' as html;
 import 'dart:convert';
 import 'dart:math';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:http/http.dart' as http; // 👉 NOVO IMPORT AQUI!
+import 'package:http/http.dart' as http;
+import 'package:crypto/crypto.dart'; // 👉 NOVA IMPORTAÇÃO
 
-const int BUILD_INTERNO = 10;
+const int BUILD_INTERNO = 11;
 
 final ValueNotifier<ThemeMode> appThemeMode = ValueNotifier(ThemeMode.dark);
 final ValueNotifier<double> appTextScale = ValueNotifier(1.0);
@@ -61,17 +62,72 @@ double parseMoeda(String valor) {
 
 DateTime obterMesContabil() {
   DateTime hj = DateTime.now();
-  // Sem frescura de esperar dias! Virou o mês, virou o app.
   return DateTime(hj.year, hj.month, 1);
+}
+
+// 🛡️ O GUARDIÃO DO APP (Painel de Controle Remoto)
+Future<bool> recursoBloqueado(BuildContext context, String recurso,
+    {String? familiaLogin}) async {
+  try {
+    var doc = await FirebaseFirestore.instance
+        .collection('configuracoes')
+        .doc('app')
+        .get();
+    if (!doc.exists) return false;
+
+    var data = doc.data()!;
+    bool ativo = data['${recurso}_ativo'] ?? true;
+    String msg =
+        data['msg_$recurso'] ?? 'Este recurso está temporariamente desativado.';
+
+    // 🌟 A MÁGICA DA WHITELIST (Se o login está desativado, mas a família tem Passe VIP)
+    if (recurso == 'login' && !ativo && familiaLogin != null) {
+      List whitelist = data['whitelist_login'] ?? [];
+      if (whitelist.contains(familiaLogin)) {
+        return false; // Passe VIP concedido! Passa direto.
+      }
+    }
+
+    if (!ativo) {
+      if (context.mounted) {
+        showDialog(
+            context: context,
+            builder: (ctx) => AlertDialog(
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(15)),
+                  title: const Row(children: [
+                    Icon(Icons.block, color: Colors.red),
+                    SizedBox(width: 10),
+                    Text('Acesso Restrito', style: TextStyle(color: Colors.red))
+                  ]),
+                  content: Text(msg),
+                  actions: [
+                    TextButton(
+                        onPressed: () => Navigator.pop(ctx),
+                        child: const Text('Entendi'))
+                  ],
+                ));
+      }
+      return true; // ⛔ Bloqueado!
+    }
+  } catch (e) {
+    debugPrint('Erro ao checar bloqueio: $e');
+  }
+  return false; // ✅ Liberado!
+}
+
+// 🔒 MÁQUINA DE CRIPTOGRAFIA
+String gerarHash(String texto) {
+  var bytes = utf8.encode(texto);
+  return sha256.convert(bytes).toString();
 }
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
-    statusBarColor: Color(0xFF1A1A1A), // Mesma cor exata do seu AppBar
-    statusBarIconBrightness:
-        Brightness.light, // Deixa os ícones (hora/bateria) brancos
+    statusBarColor: Color(0xFF1A1A1A),
+    statusBarIconBrightness: Brightness.light,
   ));
 
   FlutterError.onError = (FlutterErrorDetails details) {
@@ -82,7 +138,6 @@ void main() async {
     FlutterError.dumpErrorToConsole(details);
   };
 
-  // Inicializa o Firebase rápido
   await Firebase.initializeApp(
     options: const FirebaseOptions(
       apiKey: "AIzaSyAfxkBTSVglkIyLwvYYFY_pvQ5w5MGrTqU",
@@ -285,7 +340,9 @@ void _abrirModalTrocarSenha(BuildContext context, String familia) {
                           .get();
 
                       // ❌ ERRO: SENHA INCORRETA
-                      if (doc.data()?['senha'] != velhaCtrl.text.trim()) {
+                      if (doc.data()?['senha'] !=
+                          gerarHash(velhaCtrl.text.trim())) {
+                        // 👉 AQUI!
                         showDialog(
                             context: ctx,
                             builder: (dCtx) => AlertDialog(
@@ -306,8 +363,9 @@ void _abrirModalTrocarSenha(BuildContext context, String familia) {
                       }
 
                       // ✅ SUCESSO: SALVA A SENHA
-                      await doc.reference
-                          .update({'senha': novaCtrl.text.trim()});
+                      await doc.reference.update({
+                        'senha': gerarHash(novaCtrl.text.trim())
+                      }); // 👉 AQUI!
                       if (!ctx.mounted) return;
 
                       // 👉 A MÁGICA: Mostra o sucesso por CIMA da janela atual!
@@ -662,6 +720,7 @@ class _TelaLoginState extends State<TelaLogin> {
   @override
   void initState() {
     super.initState();
+
     //Future.microtask(() => _injetarConfiguracoesIniciaisBanco());
     _verificarFamiliaSalva();
 
@@ -705,6 +764,9 @@ class _TelaLoginState extends State<TelaLogin> {
     String familiaDigitada = _usuarioCtrl.text.trim().toUpperCase();
     if (familiaDigitada.isEmpty) return;
 
+    if (await recursoBloqueado(context, 'login', familiaLogin: familiaDigitada))
+      return;
+
     var doc = await FirebaseFirestore.instance
         .collection('familias')
         .doc(familiaDigitada)
@@ -712,7 +774,9 @@ class _TelaLoginState extends State<TelaLogin> {
 
     if (!mounted) return;
 
-    if (doc.exists && doc.data()!['senha'] == _senhaCtrl.text) {
+    if (doc.exists &&
+        doc.data()!['senha'] == gerarHash(_senhaCtrl.text.trim())) {
+      // 👉 AQUI: COMPARA O HASH!
       final prefs = await SharedPreferences.getInstance();
 
       // 🛡️ A BARREIRA DO 2FA
@@ -1202,7 +1266,7 @@ class _TelaLoginState extends State<TelaLogin> {
               child: Padding(
                 padding: const EdgeInsets.only(bottom: 20.0),
                 child: Text(
-                  'Build 10\n© ${DateTime.now().year} DOUB. Todos os direitos reservados.',
+                  'Build 11\n© ${DateTime.now().year} DOUB. Todos os direitos reservados.',
                   textAlign: TextAlign.center,
                   style: const TextStyle(
                       fontSize: 14.5,
@@ -1284,7 +1348,10 @@ class _TelaLoginState extends State<TelaLogin> {
     try {
       final response = await http.post(
         Uri.parse('https://doub-email-sender.eduardoliveira2003.workers.dev'),
-        headers: {'Content-Type': 'application/json'},
+        headers: {
+          'Content-Type': 'application/json',
+          'x-doub-secret': 'DOUB_APP_SECURE_2026' // 🔒 TRAVA DO CLOUDFLARE!
+        },
         body: jsonEncode({
           'emailDestino': email,
           'nomeDono': dono,
@@ -1365,7 +1432,9 @@ class _TelaLoginState extends State<TelaLogin> {
                         await FirebaseFirestore.instance
                             .collection('familias')
                             .doc(familiaId)
-                            .update({'senha': novaSenhaCtrl.text.trim()});
+                            .update({
+                          'senha': gerarHash(novaSenhaCtrl.text.trim())
+                        }); // 👉 AQUI!
                         if (!context.mounted) return;
                         Navigator.pop(ctx);
                         ScaffoldMessenger.of(context).showSnackBar(
@@ -1791,7 +1860,11 @@ class MenuLateral extends StatelessWidget {
   }
 
   // ⚙️ A Nova Janela de Seleção do Mês
-  void _abrirDialogMesExportacao(BuildContext context) {
+  void _abrirDialogMesExportacao(BuildContext context) async {
+    if (await recursoBloqueado(context, 'lancamentos')) return;
+
+    final TextEditingController descricaoController = TextEditingController();
+
     DateTime mesSelecionado = DateTime.now(); // Inicia sempre no mês atual
 
     showDialog(
@@ -2182,11 +2255,10 @@ class CategoriaSelector extends StatelessWidget {
                         selectedColor: Color(d['cor']),
                         checkmarkColor: Colors.white,
                         onSelected: (b) {
-                          List<String> l = List.from(selecionadas);
+                          // 👉 MÁGICA DA SELEÇÃO ÚNICA: Começa uma lista vazia!
+                          List<String> l = [];
                           if (b) {
-                            l.add(doc.id);
-                          } else {
-                            l.remove(doc.id);
+                            l.add(doc.id); // Só adiciona a que foi clicada
                           }
                           onChanged(l);
                         }));
@@ -3697,84 +3769,8 @@ class TelaLancamentos extends StatelessWidget {
                         child: const Icon(Icons.delete,
                             color: Colors.white, size: 30)),
                     confirmDismiss: (direction) async {
-                      if (!temGrupo) {
-                        bool? cf = await showDialog(
-                            context: context,
-                            builder: (ctx) => AlertDialog(
-                                    title: const Text('Apagar?'),
-                                    actions: [
-                                      TextButton(
-                                          onPressed: () =>
-                                              Navigator.pop(ctx, false),
-                                          child: const Text('Não')),
-                                      TextButton(
-                                          onPressed: () =>
-                                              Navigator.pop(ctx, true),
-                                          child: const Text('Sim',
-                                              style:
-                                                  TextStyle(color: Colors.red)))
-                                    ]));
-                        if (cf == true) {
-                          await FirebaseFirestore.instance
-                              .collection('lancamentos')
-                              .doc(docAtivo.id)
-                              .delete();
-                          return true;
-                        }
-                        return false;
-                      }
-                      final acao = await showDialog<String>(
-                          context: context,
-                          builder: (BuildContext ctx) {
-                            return AlertDialog(
-                                title: const Text('Excluir Renda Fixa'),
-                                actions: [
-                                  TextButton(
-                                      onPressed: () =>
-                                          Navigator.pop(ctx, 'cancelar'),
-                                      child: const Text('Cancelar')),
-                                  TextButton(
-                                      onPressed: () =>
-                                          Navigator.pop(ctx, 'este'),
-                                      child: const Text('Só este')),
-                                  TextButton(
-                                      onPressed: () =>
-                                          Navigator.pop(ctx, 'futuros'),
-                                      child: const Text('Deste em diante',
-                                          style: TextStyle(color: Colors.red)))
-                                ]);
-                          });
-                      if (acao == null || acao == 'cancelar') return false;
-                      if (acao == 'este') {
-                        await FirebaseFirestore.instance
-                            .collection('lancamentos')
-                            .doc(docAtivo.id)
-                            .delete();
-                      } else if (acao == 'futuros') {
-                        DateTime dtCorte =
-                            (dados['data'] as Timestamp).toDate();
-                        var query = await FirebaseFirestore.instance
-                            .collection('lancamentos')
-                            .where('grupoId', isEqualTo: dados['grupoId'])
-                            .where('familiaId',
-                                isEqualTo:
-                                    familiaLogada) // 👉 A CHAVE MÁGICA QUE FALTAVA!
-                            .get();
-                        var batch = FirebaseFirestore.instance.batch();
-                        for (var d in query.docs) {
-                          var docData =
-                              (d.data()['data'] as Timestamp).toDate();
-                          if (docData.year > dtCorte.year ||
-                              (docData.year == dtCorte.year &&
-                                  docData.month >= dtCorte.month)) {
-                            batch.delete(d.reference);
-                          } else {
-                            batch.update(d.reference, {'isContaFixa': false});
-                          }
-                        }
-                        await batch.commit();
-                      }
-                      return true;
+                      return await excluirLancamentoMestre(context, docAtivo,
+                          familiaLogada, temGrupo, 'Excluir Conta Fixa');
                     },
                     child: Column(children: [
                       ListTile(
@@ -3844,84 +3840,8 @@ class TelaLancamentos extends StatelessWidget {
                         child: const Icon(Icons.delete,
                             color: Colors.white, size: 30)),
                     confirmDismiss: (direction) async {
-                      if (!temGrupo) {
-                        bool? cf = await showDialog(
-                            context: context,
-                            builder: (ctx) => AlertDialog(
-                                    title: const Text('Apagar?'),
-                                    actions: [
-                                      TextButton(
-                                          onPressed: () =>
-                                              Navigator.pop(ctx, false),
-                                          child: const Text('Não')),
-                                      TextButton(
-                                          onPressed: () =>
-                                              Navigator.pop(ctx, true),
-                                          child: const Text('Sim',
-                                              style:
-                                                  TextStyle(color: Colors.red)))
-                                    ]));
-                        if (cf == true) {
-                          await FirebaseFirestore.instance
-                              .collection('lancamentos')
-                              .doc(docAtivo.id)
-                              .delete();
-                          return true;
-                        }
-                        return false;
-                      }
-                      final acao = await showDialog<String>(
-                          context: context,
-                          builder: (BuildContext ctx) {
-                            return AlertDialog(
-                                title: const Text('Excluir Conta Fixa'),
-                                actions: [
-                                  TextButton(
-                                      onPressed: () =>
-                                          Navigator.pop(ctx, 'cancelar'),
-                                      child: const Text('Cancelar')),
-                                  TextButton(
-                                      onPressed: () =>
-                                          Navigator.pop(ctx, 'este'),
-                                      child: const Text('Só este')),
-                                  TextButton(
-                                      onPressed: () =>
-                                          Navigator.pop(ctx, 'futuros'),
-                                      child: const Text('Deste em diante',
-                                          style: TextStyle(color: Colors.red)))
-                                ]);
-                          });
-                      if (acao == null || acao == 'cancelar') return false;
-                      if (acao == 'este') {
-                        await FirebaseFirestore.instance
-                            .collection('lancamentos')
-                            .doc(docAtivo.id)
-                            .delete();
-                      } else if (acao == 'futuros') {
-                        DateTime dtCorte =
-                            (dados['data'] as Timestamp).toDate();
-                        var query = await FirebaseFirestore.instance
-                            .collection('lancamentos')
-                            .where('grupoId', isEqualTo: dados['grupoId'])
-                            .where('familiaId',
-                                isEqualTo:
-                                    familiaLogada) // 👉 A CHAVE MÁGICA QUE FALTAVA!
-                            .get();
-                        var batch = FirebaseFirestore.instance.batch();
-                        for (var d in query.docs) {
-                          var docData =
-                              (d.data()['data'] as Timestamp).toDate();
-                          if (docData.year > dtCorte.year ||
-                              (docData.year == dtCorte.year &&
-                                  docData.month >= dtCorte.month)) {
-                            batch.delete(d.reference);
-                          } else {
-                            batch.update(d.reference, {'isContaFixa': false});
-                          }
-                        }
-                        await batch.commit();
-                      }
-                      return true;
+                      return await excluirLancamentoMestre(context, docAtivo,
+                          familiaLogada, temGrupo, 'Excluir Conta Fixa');
                     },
                     child: Column(children: [
                       ListTile(
@@ -4024,7 +3944,9 @@ class TelaParcelamentos extends StatelessWidget {
       required this.usuarioLogado,
       required this.familiaLogada}); // 👉 NOVA LINHA AQUI!
 
-  void _abrirFormularioParcelamento(BuildContext context) {
+  void _abrirFormularioParcelamento(BuildContext context) async {
+    if (await recursoBloqueado(context, 'parcelamento')) return;
+
     final TextEditingController desc = TextEditingController();
     final TextEditingController val = TextEditingController();
     final TextEditingController totParcCtrl = TextEditingController(text: '2');
@@ -4134,9 +4056,18 @@ class TelaParcelamentos extends StatelessWidget {
                               if (vDigitado > 0) vDigitado *= -1;
 
                               // ⚙️ A MÁGICA MATEMÁTICA AQUI!
-                              double vParc = isValorParcela
+                              // Trava a divisão em 2 casas decimais exatas
+                              double vParcBase = isValorParcela
                                   ? vDigitado
-                                  : (vDigitado / totP);
+                                  : double.parse(
+                                      (vDigitado / totP).toStringAsFixed(2));
+
+                              // Descobre se sobrou/faltou centavos (ex: 100 - (33.33 * 3) = 0.01)
+                              double diferencaCentavos = isValorParcela
+                                  ? 0.0
+                                  : double.parse(
+                                      (vDigitado - (vParcBase * totP))
+                                          .toStringAsFixed(2));
 
                               DateTime agora = DateTime.now();
                               String? gId = totP > 1
@@ -4146,11 +4077,18 @@ class TelaParcelamentos extends StatelessWidget {
                               int vezes = totP - pAt + 1;
                               for (int i = 0; i < vezes; i++) {
                                 int numP = pAt + i;
+
+                                // 👉 A primeira parcela absorve os centavos perdidos!
+                                double vParcFinal = (i == 0)
+                                    ? (vParcBase + diferencaCentavos)
+                                    : vParcBase;
+
                                 FirebaseFirestore.instance
                                     .collection('lancamentos')
                                     .add({
                                       'descricao': desc.text,
-                                      'valor': vParc,
+                                      'valor':
+                                          vParcFinal, // 👉 SALVA O VALOR CORRIGIDO!
                                       'responsavel': usuarioLogado,
                                       'data': Timestamp.fromDate(DateTime(
                                           mesAno.year,
@@ -4432,76 +4370,8 @@ class TelaParcelamentos extends StatelessWidget {
                         style: TextStyle(color: Colors.red)),
                     onTap: () async {
                       Navigator.pop(ctx);
-                      if (!temGrupo) {
-                        bool? cf = await showDialog(
-                            context: context,
-                            builder: (dCtx) => AlertDialog(
-                                    title: const Text('Apagar?'),
-                                    actions: [
-                                      TextButton(
-                                          onPressed: () =>
-                                              Navigator.pop(dCtx, false),
-                                          child: const Text('Não')),
-                                      TextButton(
-                                          onPressed: () =>
-                                              Navigator.pop(dCtx, true),
-                                          child: const Text('Sim',
-                                              style:
-                                                  TextStyle(color: Colors.red)))
-                                    ]));
-                        if (cf == true) {
-                          await doc.reference.delete();
-                        }
-                      } else {
-                        final acao = await showDialog<String>(
-                            context: context,
-                            builder: (BuildContext dCtx) {
-                              return AlertDialog(
-                                  title: const Text('Excluir Parcelamento'),
-                                  content: const Text(
-                                      'Apagar apenas este mês ou este e todos os meses futuros?'),
-                                  actions: [
-                                    TextButton(
-                                        onPressed: () =>
-                                            Navigator.pop(dCtx, 'cancelar'),
-                                        child: const Text('Cancelar')),
-                                    TextButton(
-                                        onPressed: () =>
-                                            Navigator.pop(dCtx, 'este'),
-                                        child: const Text('Só este')),
-                                    TextButton(
-                                        onPressed: () =>
-                                            Navigator.pop(dCtx, 'futuros'),
-                                        child: const Text('Deste em diante',
-                                            style:
-                                                TextStyle(color: Colors.red)))
-                                  ]);
-                            });
-                        if (acao == 'este') {
-                          await doc.reference.delete();
-                        } else if (acao == 'futuros') {
-                          DateTime dtCorte =
-                              (dados['data'] as Timestamp).toDate();
-                          var query = await FirebaseFirestore.instance
-                              .collection('lancamentos')
-                              .where('grupoId', isEqualTo: dados['grupoId'])
-                              .where('familiaId',
-                                  isEqualTo:
-                                      familiaLogada) // 👉 A CHAVE MÁGICA QUE FALTAVA!
-                              .get();
-                          var batch = FirebaseFirestore.instance.batch();
-                          for (var d in query.docs) {
-                            var docData =
-                                (d.data()['data'] as Timestamp).toDate();
-                            if (docData.year > dtCorte.year ||
-                                (docData.year == dtCorte.year &&
-                                    docData.month >= dtCorte.month)) {
-                              batch.delete(d.reference);
-                            }
-                          }
-                          await batch.commit();
-                        }
-                      }
+                      await excluirLancamentoMestre(context, doc, familiaLogada,
+                          temGrupo, 'Excluir Parcelamento');
                     }),
               ]));
         });
@@ -4664,7 +4534,8 @@ class TelaPoupanca extends StatelessWidget {
       required this.usuarioLogado,
       required this.familiaLogada}); // 👉 NOVA LINHA AQUI!
 
-  void _abrirFormularioDepositoDireto(BuildContext context) {
+  void _abrirFormularioDepositoDireto(BuildContext context) async {
+    if (await recursoBloqueado(context, 'poupanca')) return;
     final TextEditingController descCtrl =
         TextEditingController(text: 'Saldo Inicial / Extra');
     final TextEditingController valCtrl = TextEditingController();
@@ -4877,103 +4748,12 @@ class TelaPoupanca extends StatelessWidget {
                                           child: const Icon(Icons.delete,
                                               color: Colors.white, size: 30)),
                                       confirmDismiss: (direction) async {
-                                        if (!temGrupo) {
-                                          bool? conf = await showDialog(
-                                              context: context,
-                                              builder: (ctx) => AlertDialog(
-                                                      title:
-                                                          const Text('Apagar?'),
-                                                      actions: [
-                                                        TextButton(
-                                                            onPressed: () =>
-                                                                Navigator.pop(
-                                                                    ctx, false),
-                                                            child: const Text(
-                                                                'Cancelar')),
-                                                        TextButton(
-                                                            onPressed: () =>
-                                                                Navigator.pop(
-                                                                    ctx, true),
-                                                            child: const Text(
-                                                                'Apagar',
-                                                                style: TextStyle(
-                                                                    color: Colors
-                                                                        .red)))
-                                                      ]));
-                                          if (conf == true) {
-                                            await doc.reference.delete();
-                                            return true;
-                                          }
-                                          return false;
-                                        }
-                                        final acao = await showDialog<String>(
-                                            context: context,
-                                            builder: (ctx) {
-                                              return AlertDialog(
-                                                  title: const Text(
-                                                      'Excluir Poupança Fixa'),
-                                                  actions: [
-                                                    TextButton(
-                                                        onPressed: () =>
-                                                            Navigator.pop(ctx,
-                                                                'cancelar'),
-                                                        child: const Text(
-                                                            'Cancelar')),
-                                                    TextButton(
-                                                        onPressed: () =>
-                                                            Navigator.pop(
-                                                                ctx, 'este'),
-                                                        child: const Text(
-                                                            'Só este')),
-                                                    TextButton(
-                                                        onPressed: () =>
-                                                            Navigator.pop(
-                                                                ctx, 'futuros'),
-                                                        child: const Text(
-                                                            'Deste em diante',
-                                                            style: TextStyle(
-                                                                color: Colors
-                                                                    .red)))
-                                                  ]);
-                                            });
-                                        if (acao == null ||
-                                            acao == 'cancelar') {
-                                          return false;
-                                        }
-                                        if (acao == 'este') {
-                                          await doc.reference.delete();
-                                        } else if (acao == 'futuros') {
-                                          DateTime dtCorte =
-                                              (dados['data'] as Timestamp)
-                                                  .toDate();
-                                          var query = await FirebaseFirestore
-                                              .instance
-                                              .collection('lancamentos')
-                                              .where('grupoId',
-                                                  isEqualTo: dados['grupoId'])
-                                              .where('familiaId',
-                                                  isEqualTo:
-                                                      familiaLogada) // 👉 A CHAVE MÁGICA QUE FALTAVA!
-                                              .get();
-                                          var batch = FirebaseFirestore.instance
-                                              .batch();
-                                          for (var d in query.docs) {
-                                            var docData =
-                                                (d.data()['data'] as Timestamp)
-                                                    .toDate();
-                                            if (docData.year > dtCorte.year ||
-                                                (docData.year == dtCorte.year &&
-                                                    docData.month >=
-                                                        dtCorte.month)) {
-                                              batch.delete(d.reference);
-                                            } else {
-                                              batch.update(d.reference,
-                                                  {'isContaFixa': false});
-                                            }
-                                          }
-                                          await batch.commit();
-                                        }
-                                        return true;
+                                        return await excluirLancamentoMestre(
+                                            context,
+                                            doc,
+                                            familiaLogada,
+                                            temGrupo,
+                                            'Excluir Poupança Fixa');
                                       },
                                       child: Card(
                                         color: isDark
@@ -5795,6 +5575,7 @@ class _TelaCadastroFamiliaState extends State<TelaCadastroFamilia> {
   bool _mostrarSenha = false;
 
   void _tentarCadastrar() async {
+    if (await recursoBloqueado(context, 'cadastro')) return;
     // 1. Validações visuais simples
     if (_emailCtrl.text.isEmpty ||
         _donoCtrl.text.isEmpty ||
@@ -5832,13 +5613,15 @@ class _TelaCadastroFamiliaState extends State<TelaCadastroFamilia> {
       }
 
       // 3. Salva a nova família no Firestore
+      // 3. Salva a nova família no Firestore
       await FirebaseFirestore.instance
           .collection('familias')
           .doc(familiaId)
           .set({
         'dono': _donoCtrl.text.trim(),
         'email': _emailCtrl.text.trim(),
-        'senha': _senhaCtrl.text.trim(),
+        'senha':
+            gerarHash(_senhaCtrl.text.trim()), // 👉 AQUI: SENHA CRIPTOGRAFADA!
       });
 
       // 4. Cria as categorias padrão já atreladas à nova família
@@ -6073,7 +5856,10 @@ class _TelaVerificacao2FAState extends State<TelaVerificacao2FA> {
       final response = await http.post(
         Uri.parse(
             'https://doub-email-sender.eduardoliveira2003.workers.dev'), // O SEU SERVIDOR!
-        headers: {'Content-Type': 'application/json'},
+        headers: {
+          'Content-Type': 'application/json',
+          'x-doub-secret': 'DOUB_APP_SECURE_2026' // 🔒 TRAVA DO CLOUDFLARE!
+        },
         body: jsonEncode({
           'emailDestino': widget.emailDestino,
           'nomeDono': widget.donoFamilia,
@@ -6222,4 +6008,73 @@ class _TelaVerificacao2FAState extends State<TelaVerificacao2FA> {
       ),
     );
   }
+}
+
+// ⚙️ FUNÇÃO MESTRE DE EXCLUSÃO (Substitui 5 blocos gigantes)
+Future<bool> excluirLancamentoMestre(
+  BuildContext context,
+  DocumentSnapshot doc,
+  String familiaLogada,
+  bool temGrupo,
+  String tituloExclusao,
+) async {
+  if (!temGrupo) {
+    bool? cf = await showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(title: const Text('Apagar?'), actions: [
+              TextButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: const Text('Não')),
+              TextButton(
+                  onPressed: () => Navigator.pop(ctx, true),
+                  child: const Text('Sim', style: TextStyle(color: Colors.red)))
+            ]));
+    if (cf == true) {
+      await doc.reference.delete();
+      return true;
+    }
+    return false;
+  }
+
+  final acao = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(title: Text(tituloExclusao), actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, 'cancelar'),
+                child: const Text('Cancelar')),
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, 'este'),
+                child: const Text('Só este')),
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, 'futuros'),
+                child: const Text('Deste em diante',
+                    style: TextStyle(color: Colors.red)))
+          ]));
+
+  if (acao == null || acao == 'cancelar') return false;
+
+  if (acao == 'este') {
+    await doc.reference.delete();
+  } else if (acao == 'futuros') {
+    final dados = doc.data() as Map<String, dynamic>;
+    DateTime dtCorte = (dados['data'] as Timestamp).toDate();
+    var query = await FirebaseFirestore.instance
+        .collection('lancamentos')
+        .where('grupoId', isEqualTo: dados['grupoId'])
+        .where('familiaId', isEqualTo: familiaLogada)
+        .get();
+
+    var batch = FirebaseFirestore.instance.batch();
+    for (var d in query.docs) {
+      var docData = (d.data()['data'] as Timestamp).toDate();
+      if (docData.year > dtCorte.year ||
+          (docData.year == dtCorte.year && docData.month >= dtCorte.month)) {
+        batch.delete(d.reference);
+      } else {
+        batch.update(d.reference, {'isContaFixa': false});
+      }
+    }
+    await batch.commit();
+  }
+  return true;
 }

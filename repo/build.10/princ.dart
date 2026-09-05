@@ -1,15 +1,34 @@
+import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:flutter/cupertino.dart';
 import 'dart:ui';
 import 'package:flutter_localizations/flutter_localizations.dart';
-import 'dart:html' as html;
+import 'package:universal_html/html.dart' as html;
 import 'dart:convert';
+import 'dart:math';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:http/http.dart' as http;
+
+const int BUILD_INTERNO = 10;
 
 final ValueNotifier<ThemeMode> appThemeMode = ValueNotifier(ThemeMode.dark);
 final ValueNotifier<double> appTextScale = ValueNotifier(1.0);
+final Map<int, IconData> mapaDeIcones = {
+  Icons.shopping_cart.codePoint: Icons.shopping_cart,
+  Icons.fastfood.codePoint: Icons.fastfood,
+  Icons.local_gas_station.codePoint: Icons.local_gas_station,
+  Icons.pets.codePoint: Icons.pets,
+  Icons.flight.codePoint: Icons.flight,
+  Icons.home.codePoint: Icons.home,
+  Icons.movie.codePoint: Icons.movie,
+  Icons.directions_car.codePoint: Icons.directions_car,
+  Icons.health_and_safety.codePoint: Icons.health_and_safety,
+  Icons.category.codePoint: Icons.category,
+};
+
+Map<String, Map<String, dynamic>> cacheCategoriasGeral = {};
 
 String obterNomeMes(int mes) {
   const meses = [
@@ -42,20 +61,25 @@ double parseMoeda(String valor) {
 
 DateTime obterMesContabil() {
   DateTime hj = DateTime.now();
-  if (hj.day < 3) {
-    int mes = hj.month - 1;
-    int ano = hj.year;
-    if (mes == 0) {
-      mes = 12;
-      ano--;
-    }
-    return DateTime(ano, mes, 1);
-  }
   return DateTime(hj.year, hj.month, 1);
 }
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+    statusBarColor: Color(0xFF1A1A1A),
+    statusBarIconBrightness: Brightness.light,
+  ));
+
+  FlutterError.onError = (FlutterErrorDetails details) {
+    FlutterError.dumpErrorToConsole(details);
+  };
+
+  FlutterError.onError = (FlutterErrorDetails details) {
+    FlutterError.dumpErrorToConsole(details);
+  };
+
   await Firebase.initializeApp(
     options: const FirebaseOptions(
       apiKey: "AIzaSyAfxkBTSVglkIyLwvYYFY_pvQ5w5MGrTqU",
@@ -67,63 +91,14 @@ void main() async {
     ),
   );
 
-  await _injetarConfiguracoesIniciaisBanco();
-
+  // Lê o cache do celular de forma síncrona/rápida
   final prefs = await SharedPreferences.getInstance();
   final isDark = prefs.getBool('isDark') ?? true;
   appThemeMode.value = isDark ? ThemeMode.dark : ThemeMode.light;
   appTextScale.value = prefs.getDouble('textScale') ?? 1.0;
 
+  // 🚀 O APP ABRE AGORA MESMO, SEM ESPERAR O FIRESTORE!
   runApp(const MyApp());
-}
-
-Future<void> _injetarConfiguracoesIniciaisBanco() async {
-  try {
-    var dbUsuarios = FirebaseFirestore.instance.collection('usuarios');
-    var docEduardo = await dbUsuarios.doc('Eduardo').get();
-    if (!docEduardo.exists) {
-      await dbUsuarios
-          .doc('Eduardo')
-          .set({'senha': 'ADMIN123', 'codigo': '711@2709'});
-    }
-    var docNaiub = await dbUsuarios.doc('Naiub').get();
-    if (!docNaiub.exists) {
-      await dbUsuarios
-          .doc('Naiub')
-          .set({'senha': 'ADMIN123', 'codigo': '713@2105'});
-    }
-
-    var dbCats = FirebaseFirestore.instance.collection('categorias');
-    var catsGet = await dbCats.limit(1).get();
-    if (catsGet.docs.isEmpty) {
-      await dbCats.add({
-        'nome': 'Mercado',
-        'icone': Icons.shopping_cart.codePoint,
-        'cor': Colors.green.value,
-        'ativo': true
-      });
-      await dbCats.add({
-        'nome': 'Combustível',
-        'icone': Icons.local_gas_station.codePoint,
-        'cor': Colors.orange.value,
-        'ativo': true
-      });
-      await dbCats.add({
-        'nome': 'Lazer',
-        'icone': Icons.movie.codePoint,
-        'cor': Colors.purple.value,
-        'ativo': true
-      });
-      await dbCats.add({
-        'nome': 'Contas Fixas',
-        'icone': Icons.home.codePoint,
-        'cor': Colors.blue.value,
-        'ativo': true
-      });
-    }
-  } catch (e) {
-    debugPrint("Erro Init: $e");
-  }
 }
 
 class MyApp extends StatelessWidget {
@@ -139,7 +114,14 @@ class MyApp extends StatelessWidget {
                 return MaterialApp(
                   title: 'DOUB Finanças',
                   debugShowCheckedModeBanner: false,
-                  themeMode: themeMode,
+                  themeMode: ThemeMode.dark,
+                  scrollBehavior: const MaterialScrollBehavior().copyWith(
+                    dragDevices: {
+                      PointerDeviceKind.mouse,
+                      PointerDeviceKind.touch,
+                      PointerDeviceKind.trackpad
+                    },
+                  ),
                   localizationsDelegates: const [
                     GlobalMaterialLocalizations.delegate,
                     GlobalWidgetsLocalizations.delegate,
@@ -148,19 +130,12 @@ class MyApp extends StatelessWidget {
                   supportedLocales: const [
                     Locale('pt', 'BR'),
                   ],
-                  theme: ThemeData(
-                    colorScheme: ColorScheme.fromSeed(
-                        seedColor: Colors.green, brightness: Brightness.light),
-                    scaffoldBackgroundColor: Colors.green.shade50,
-                    appBarTheme: const AppBarTheme(
-                        backgroundColor: Colors.green,
-                        foregroundColor: Colors.white,
-                        elevation: 0),
-                    cardColor: Colors.white,
-                  ),
+
+                  // 👇 TEMA ESCURO PREMIUM (Adeus pântano!)
                   darkTheme: ThemeData(
                     colorScheme: ColorScheme.fromSeed(
-                        seedColor: Colors.green,
+                        // Trocamos o verde padrão por um Verde Mint/Neon super chique!
+                        seedColor: const Color(0xFF00E676),
                         brightness: Brightness.dark,
                         surface: const Color(0xFF121212)),
                     scaffoldBackgroundColor: const Color(0xFF121212),
@@ -168,11 +143,16 @@ class MyApp extends StatelessWidget {
                         backgroundColor: Color(0xFF1A1A1A),
                         foregroundColor: Colors.white,
                         elevation: 0),
-                    cardColor: const Color(0xFF1E1E1E),
+                    // 👇 O MATA-PÂNTANO: Força o fundo dos Cards a serem puros, sem mistura de verde!
+                    cardTheme: const CardThemeData(
+                      color: Color(0xFF1E1E1E),
+                      surfaceTintColor: Colors.transparent, // A mágica tá aqui!
+                    ),
                     bottomNavigationBarTheme:
                         const BottomNavigationBarThemeData(
                             backgroundColor: Color(0xFF1A1A1A),
-                            selectedItemColor: Colors.green,
+                            selectedItemColor: Color(
+                                0xFF00E676), // Fica verde neon selecionado
                             unselectedItemColor: Colors.white54),
                   ),
                   builder: (context, child) {
@@ -182,106 +162,15 @@ class MyApp extends StatelessWidget {
                       child: child!,
                     );
                   },
-                  home: const TelaSplash(),
+                  home: const TelaLogin(),
                 );
               });
         });
   }
 }
 
-class TelaSplash extends StatefulWidget {
-  const TelaSplash({super.key});
-  @override
-  State<TelaSplash> createState() => _TelaSplashState();
-}
-
-class _TelaSplashState extends State<TelaSplash> {
-  bool _mostrarOub = false;
-  double _escala = 1.0;
-  double _opacidade = 1.0;
-
-  @override
-  void initState() {
-    super.initState();
-    _iniciarAnimacaoCinematografica();
-  }
-
-  void _iniciarAnimacaoCinematografica() async {
-    await Future.delayed(const Duration(milliseconds: 800));
-    if (mounted) {
-      setState(() {
-        _mostrarOub = true;
-      });
-    }
-    await Future.delayed(const Duration(milliseconds: 2500));
-    if (mounted) {
-      setState(() {
-        _escala = 5.0;
-        _opacidade = 0.0;
-      });
-    }
-    await Future.delayed(const Duration(milliseconds: 1200));
-    if (mounted) {
-      Navigator.pushReplacement(
-          context, MaterialPageRoute(builder: (context) => const TelaLogin()));
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    bool isDark = Theme.of(context).brightness == Brightness.dark;
-    double fatorEscala = MediaQuery.textScalerOf(context).scale(1);
-    double larguraSegura = 145.0 * fatorEscala;
-
-    return Scaffold(
-      backgroundColor: isDark ? const Color(0xFF121212) : Colors.green.shade50,
-      body: Center(
-        child: AnimatedOpacity(
-          duration: const Duration(milliseconds: 1200),
-          opacity: _opacidade,
-          curve: Curves.easeInOut,
-          child: AnimatedScale(
-            duration: const Duration(milliseconds: 1200),
-            scale: _escala,
-            curve: Curves.easeInOutCubic,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text('D',
-                    style: TextStyle(
-                        fontSize: 70,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.green,
-                        letterSpacing: -2)),
-                AnimatedContainer(
-                  duration: const Duration(milliseconds: 1500),
-                  curve: Curves.easeOutQuart,
-                  width: _mostrarOub ? larguraSegura : 0.0,
-                  child: ClipRect(
-                    child: OverflowBox(
-                      alignment: Alignment.centerLeft,
-                      maxWidth: larguraSegura,
-                      minWidth: larguraSegura,
-                      child: const Text('OUB',
-                          style: TextStyle(
-                              fontSize: 70,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.green),
-                          maxLines: 1,
-                          softWrap: false),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-void abrirConfiguracoes(BuildContext context) {
+void abrirConfiguracoes(BuildContext context, String familiaLogada) {
+  // 👉 RECEBE A FAMILIA
   showDialog(
       context: context,
       builder: (context) {
@@ -295,29 +184,12 @@ void abrirConfiguracoes(BuildContext context) {
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              ValueListenableBuilder<ThemeMode>(
-                valueListenable: appThemeMode,
-                builder: (context, mode, _) {
-                  bool isDark = mode == ThemeMode.dark;
-                  return SwitchListTile(
-                      title: const Text('Modo Escuro'),
-                      secondary:
-                          Icon(isDark ? Icons.dark_mode : Icons.light_mode),
-                      value: isDark,
-                      onChanged: (bool valor) async {
-                        appThemeMode.value =
-                            valor ? ThemeMode.dark : ThemeMode.light;
-                        final prefs = await SharedPreferences.getInstance();
-                        prefs.setBool('isDark', valor);
-                      });
-                },
-              ),
               const Divider(),
               ValueListenableBuilder<double>(
                   valueListenable: appTextScale,
                   builder: (context, scale, _) {
                     return DropdownButtonFormField<double>(
-                      value: scale,
+                      initialValue: scale,
                       decoration: const InputDecoration(
                           labelText: 'Tamanho da Fonte',
                           prefixIcon: Icon(Icons.format_size)),
@@ -333,6 +205,18 @@ void abrirConfiguracoes(BuildContext context) {
                       },
                     );
                   }),
+              const SizedBox(height: 10),
+              const Divider(),
+              // 👇 NOVA OPÇÃO DE TROCAR A SENHA!
+              if (familiaLogada.isNotEmpty)
+                ListTile(
+                  leading: const Icon(Icons.password, color: Colors.blue),
+                  title: const Text('Alterar Senha da Família'),
+                  onTap: () {
+                    Navigator.pop(context); // Fecha config
+                    _abrirModalTrocarSenha(context, familiaLogada);
+                  },
+                ),
             ],
           ),
           actions: [
@@ -344,248 +228,1172 @@ void abrirConfiguracoes(BuildContext context) {
       });
 }
 
-class TelaLogin extends StatelessWidget {
-  const TelaLogin({super.key});
+void _abrirModalTrocarSenha(BuildContext context, String familia) {
+  final velhaCtrl = TextEditingController();
+  final novaCtrl = TextEditingController();
+  bool showPws = false;
 
-  void _abrirDialogSenha(BuildContext context, String usuario) {
-    final TextEditingController senhaController = TextEditingController();
-    bool senhaIncorreta = false;
-    bool mostrarSenha = false;
+  showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+          builder: (c, setS) => AlertDialog(
+                title: const Text('Alterar Senha da Família'),
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                        controller: velhaCtrl,
+                        obscureText: !showPws,
+                        decoration: InputDecoration(
+                            labelText: 'Senha Atual',
+                            border: const OutlineInputBorder(),
+                            suffixIcon: IconButton(
+                                icon: Icon(
+                                    showPws
+                                        ? Icons.visibility
+                                        : Icons.visibility_off,
+                                    color: Colors.grey),
+                                onPressed: () =>
+                                    setS(() => showPws = !showPws)))),
+                    const SizedBox(height: 15),
+                    TextField(
+                        controller: novaCtrl,
+                        obscureText: !showPws,
+                        decoration: const InputDecoration(
+                            labelText: 'Nova Senha',
+                            border: OutlineInputBorder())),
+                  ],
+                ),
+                actions: [
+                  TextButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      child: const Text('Cancelar')),
+                  ElevatedButton(
+                    style:
+                        ElevatedButton.styleFrom(backgroundColor: Colors.blue),
+                    onPressed: () async {
+                      // Previne se o usuário apertar salvar sem digitar nada
+                      if (velhaCtrl.text.trim().isEmpty ||
+                          novaCtrl.text.trim().isEmpty) return;
+
+                      var doc = await FirebaseFirestore.instance
+                          .collection('familias')
+                          .doc(familia)
+                          .get();
+
+                      // ❌ ERRO: SENHA INCORRETA
+                      if (doc.data()?['senha'] != velhaCtrl.text.trim()) {
+                        showDialog(
+                            context: ctx,
+                            builder: (dCtx) => AlertDialog(
+                                    title: const Row(children: [
+                                      Icon(Icons.error, color: Colors.red),
+                                      SizedBox(width: 10),
+                                      Text('Erro',
+                                          style: TextStyle(color: Colors.red))
+                                    ]),
+                                    content: const Text(
+                                        'A senha atual está incorreta!'),
+                                    actions: [
+                                      TextButton(
+                                          onPressed: () => Navigator.pop(dCtx),
+                                          child: const Text('Tentar novamente'))
+                                    ]));
+                        return;
+                      }
+
+                      // ✅ SUCESSO: SALVA A SENHA
+                      await doc.reference
+                          .update({'senha': novaCtrl.text.trim()});
+                      if (!ctx.mounted) return;
+
+                      // 👉 A MÁGICA: Mostra o sucesso por CIMA da janela atual!
+                      showDialog(
+                          context:
+                              ctx, // Usa o contexto da própria janela para não se perder!
+                          barrierDismissible:
+                              false, // Obriga o usuário a clicar no OK
+                          builder: (dCtx) => AlertDialog(
+                                  title: const Row(children: [
+                                    Icon(Icons.check_circle,
+                                        color: Colors.green),
+                                    SizedBox(width: 10),
+                                    Text('Sucesso!',
+                                        style: TextStyle(color: Colors.green))
+                                  ]),
+                                  content: const Text(
+                                      'A senha da sua família foi atualizada com sucesso.'),
+                                  actions: [
+                                    TextButton(
+                                        onPressed: () {
+                                          Navigator.pop(
+                                              dCtx); // 1. Fecha o aviso de sucesso
+                                          Navigator.pop(
+                                              ctx); // 2. Fecha a janela de trocar a senha
+                                        },
+                                        child: const Text('OK',
+                                            style: TextStyle(
+                                                fontWeight: FontWeight.bold)))
+                                  ]));
+                    },
+                    child: const Text('Salvar',
+                        style: TextStyle(color: Colors.white)),
+                  )
+                ],
+              )));
+}
+
+class TelaLogin extends StatefulWidget {
+  final bool manterDesbloqueado;
+
+  const TelaLogin({super.key, this.manterDesbloqueado = false});
+
+  @override
+  State<TelaLogin> createState() => _TelaLoginState();
+}
+
+class _TelaLoginState extends State<TelaLogin> {
+  // 🎬 VARIÁVEIS DA ANIMAÇÃO
+  late bool _mostrarDoub = widget.manterDesbloqueado;
+  late bool _mostrarFinancas = widget.manterDesbloqueado;
+  late bool _moverParaCima = widget.manterDesbloqueado;
+  late bool _mostrarRestoDaTela = widget.manterDesbloqueado;
+  bool _modoEdicaoAvatares = false; // 👉 ADICIONE ESTA LINHA AQUI!
+
+  // 🔐 CONTROLE DA FAMÍLIA E FORMULÁRIO
+  late bool _familiaDesbloqueada = widget.manterDesbloqueado;
+  String _nomeFamiliaAtual = '';
+
+  // Controladores do Formulário na Tela
+  final TextEditingController _usuarioCtrl = TextEditingController();
+  final TextEditingController _senhaCtrl = TextEditingController();
+  bool _mostrarSenha = false;
+  bool _loginIncorreto = false;
+
+  // ➕ MODAL PARA ADICIONAR NOVO MEMBRO
+  void _mostrarModalAdicionarMembro(BuildContext context) {
+    final TextEditingController nomeCtrl = TextEditingController();
+    Color corSelecionada = Colors.blue;
 
     showDialog(
       context: context,
       builder: (context) {
-        return StatefulBuilder(builder: (context, setStateDialog) {
-          void tentarLogin() async {
-            var doc = await FirebaseFirestore.instance
-                .collection('usuarios')
-                .doc(usuario)
-                .get();
-            if (doc.exists && doc.data()!['senha'] == senhaController.text) {
-              Navigator.pop(context);
-              Navigator.pushReplacement(
-                  context,
-                  MaterialPageRoute(
-                      builder: (context) =>
-                          TelaNavegacao(usuarioLogado: usuario)));
-            } else {
-              setStateDialog(() {
-                senhaIncorreta = true;
-              });
-            }
-          }
-
-          void abrirRecuperacao() {
-            Navigator.pop(context);
-            _abrirDialogRecuperacao(context, usuario);
-          }
-
-          return AlertDialog(
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-            title: Text('Olá, $usuario!', textAlign: TextAlign.center),
-            content: Column(mainAxisSize: MainAxisSize.min, children: [
-              const Text('Digite sua senha de acesso:',
-                  style: TextStyle(color: Colors.grey)),
-              const SizedBox(height: 15),
-              TextField(
-                  controller: senhaController,
-                  obscureText: !mostrarSenha,
-                  textInputAction: TextInputAction.done,
-                  onSubmitted: (valor) => tentarLogin(),
-                  decoration: InputDecoration(
-                      labelText: 'Senha',
-                      border: const OutlineInputBorder(),
-                      prefixIcon: const Icon(Icons.lock),
-                      suffixIcon: IconButton(
-                        icon: Icon(
-                            mostrarSenha
-                                ? Icons.visibility
-                                : Icons.visibility_off,
-                            color: Colors.grey),
-                        onPressed: () {
-                          setStateDialog(() {
-                            mostrarSenha = !mostrarSenha;
-                          });
-                        },
-                      ),
-                      errorText: senhaIncorreta ? 'Senha incorreta!' : null)),
-              const SizedBox(height: 10),
-              TextButton(
-                  onPressed: abrirRecuperacao,
-                  child: const Text('Esqueci ou Mudar Senha',
-                      style: TextStyle(fontSize: 12, color: Colors.blue)))
-            ]),
-            actions: [
-              TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('Cancelar',
-                      style: TextStyle(color: Colors.grey))),
-              ElevatedButton(
-                  style:
-                      ElevatedButton.styleFrom(backgroundColor: Colors.green),
-                  onPressed: tentarLogin,
-                  child: const Text('Entrar',
-                      style: TextStyle(color: Colors.white)))
-            ],
-          );
-        });
-      },
-    );
-  }
-
-  void _abrirDialogRecuperacao(BuildContext context, String usuario) {
-    final TextEditingController codigoController = TextEditingController();
-    final TextEditingController novaSenhaController = TextEditingController();
-    bool codigoIncorreto = false;
-
-    showDialog(
-        context: context,
-        builder: (ctx) {
-          return StatefulBuilder(builder: (context, setStateDialog) {
-            void salvarNovaSenha() async {
-              var doc = await FirebaseFirestore.instance
-                  .collection('usuarios')
-                  .doc(usuario)
-                  .get();
-              if (doc.exists &&
-                  doc.data()!['codigo'] == codigoController.text &&
-                  novaSenhaController.text.isNotEmpty) {
-                await doc.reference.update({'senha': novaSenhaController.text});
-                Navigator.pop(ctx);
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                    content: Text('Senha alterada com sucesso!'),
-                    backgroundColor: Colors.green));
-              } else {
-                setStateDialog(() {
-                  codigoIncorreto = true;
-                });
-              }
-            }
-
+        return StatefulBuilder(
+          builder: (context, setStateModal) {
             return AlertDialog(
-              title: const Text('Mudar Senha'),
+              title: const Text('Novo Membro da Família'),
               content: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Text('Digite seu código de segurança:',
-                      style: TextStyle(fontSize: 12, color: Colors.grey)),
+                  TextField(
+                    controller: nomeCtrl,
+                    decoration:
+                        const InputDecoration(labelText: 'Nome do Membro'),
+                  ),
+                  const SizedBox(height: 20),
+                  const Text('Escolha a Cor do Personagem:'),
                   const SizedBox(height: 10),
-                  TextField(
-                      controller: codigoController,
-                      obscureText: true,
-                      decoration: InputDecoration(
-                          labelText: 'Código Secreto',
-                          errorText:
-                              codigoIncorreto ? 'Código inválido!' : null)),
-                  const SizedBox(height: 15),
-                  TextField(
-                      controller: novaSenhaController,
-                      decoration:
-                          const InputDecoration(labelText: 'Criar Nova Senha')),
+                  // PALETA DE CORES RÁPIDA
+                  Wrap(
+                    spacing: 12,
+                    children: [
+                      Colors.blue,
+                      Colors.green,
+                      Colors.purple,
+                      Colors.orange,
+                      Colors.red,
+                      Colors.pink,
+                      Colors.teal
+                    ].map((cor) {
+                      bool selecionada = corSelecionada == cor;
+                      return GestureDetector(
+                        onTap: () => setStateModal(() => corSelecionada = cor),
+                        child: Container(
+                          width: 35,
+                          height: 35,
+                          decoration: BoxDecoration(
+                            color: cor,
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                                color: selecionada
+                                    ? Colors.black
+                                    : Colors.transparent,
+                                width: 3),
+                          ),
+                          child: selecionada
+                              ? const Icon(Icons.check,
+                                  color: Colors.white, size: 20)
+                              : null,
+                        ),
+                      );
+                    }).toList(),
+                  ),
                 ],
               ),
               actions: [
                 TextButton(
-                    onPressed: () => Navigator.pop(ctx),
+                    onPressed: () => Navigator.pop(context),
                     child: const Text('Cancelar')),
                 ElevatedButton(
-                    style:
-                        ElevatedButton.styleFrom(backgroundColor: Colors.green),
-                    onPressed: salvarNovaSenha,
-                    child: const Text('Salvar',
-                        style: TextStyle(color: Colors.white)))
+                  style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xff235224)),
+                  onPressed: () async {
+                    if (nomeCtrl.text.trim().isEmpty) return;
+
+                    // 🛡️ TRAVA DE LIMITE DE MEMBROS (Ex: Máximo de 5 membros)
+                    var membrosAtuais = await FirebaseFirestore.instance
+                        .collection('usuarios')
+                        .where('familiaId', isEqualTo: _nomeFamiliaAtual)
+                        .get();
+
+                    if (membrosAtuais.docs.length >= 5) {
+                      if (!context.mounted) return;
+                      Navigator.pop(context);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text(
+                              'Limite máximo de 5 membros por família atingido!',
+                              style: TextStyle(color: Colors.white)),
+                          backgroundColor: Colors.red,
+                        ),
+                      );
+                      return;
+                    }
+
+                    // Se passou da trava, salva normalmente:
+                    await FirebaseFirestore.instance
+                        .collection('usuarios')
+                        .add({
+                      'nome': nomeCtrl.text.trim(),
+                      'familiaId': _nomeFamiliaAtual,
+                      'cor': corSelecionada.value,
+                    });
+
+                    if (!context.mounted) return;
+                    Navigator.pop(context);
+                  },
+                  child: const Text('Adicionar',
+                      style: TextStyle(color: Colors.white)),
+                ),
               ],
             );
-          });
+          },
+        );
+      },
+    );
+  }
+
+  // ✏️ MODAL PARA EDITAR MEMBRO EXISTENTE
+  void _mostrarModalEditarMembro(
+      BuildContext context, String docId, String nomeAtual, int corAtual) {
+    final TextEditingController nomeCtrl =
+        TextEditingController(text: nomeAtual);
+    Color corSelecionada = Color(corAtual);
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setStateModal) {
+            return AlertDialog(
+              title: const Text('Editar Membro'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: nomeCtrl,
+                    decoration:
+                        const InputDecoration(labelText: 'Nome do Membro'),
+                  ),
+                  const SizedBox(height: 20),
+                  const Text('Alterar Cor:'),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 12,
+                    children: [
+                      Colors.blue,
+                      Colors.green,
+                      Colors.purple,
+                      Colors.orange,
+                      Colors.red,
+                      Colors.pink,
+                      Colors.teal
+                    ].map((cor) {
+                      bool selecionada = corSelecionada.value == cor.value;
+                      return GestureDetector(
+                        onTap: () => setStateModal(() => corSelecionada = cor),
+                        child: Container(
+                          width: 35,
+                          height: 35,
+                          decoration: BoxDecoration(
+                            color: cor,
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                                color: selecionada
+                                    ? Colors.black
+                                    : Colors.transparent,
+                                width: 3),
+                          ),
+                          child: selecionada
+                              ? const Icon(Icons.check,
+                                  color: Colors.white, size: 20)
+                              : null,
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () async {
+                    // Opção de excluir membro se quiser
+                    await FirebaseFirestore.instance
+                        .collection('usuarios')
+                        .doc(docId)
+                        .delete();
+                    if (!context.mounted) return;
+                    Navigator.pop(context);
+                  },
+                  child: const Text('Excluir',
+                      style: TextStyle(color: Colors.red)),
+                ),
+                TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('Cancelar')),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xff235224)),
+                  onPressed: () async {
+                    if (nomeCtrl.text.trim().isEmpty) return;
+
+                    // Atualiza o documento no Firestore
+                    await FirebaseFirestore.instance
+                        .collection('usuarios')
+                        .doc(docId)
+                        .update({
+                      'nome': nomeCtrl.text.trim(),
+                      'cor': corSelecionada.value,
+                    });
+
+                    if (!context.mounted) return;
+                    Navigator.pop(context);
+                  },
+                  child: const Text('Salvar',
+                      style: TextStyle(color: Colors.white)),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _verificarAtualizacaoObrigatoria() async {
+    try {
+      var doc = await FirebaseFirestore.instance
+          .collection('configuracoes')
+          .doc('app')
+          .get();
+
+      if (doc.exists && mounted) {
+        num buildDoBanco = doc.data()!['buildAtual'] ?? 1;
+        String linkDown = doc.data()!['linkApk'] ?? '';
+
+        // Se o banco diz que a versão é 2, e o app é 1, ele pede pra atualizar!
+        if (buildDoBanco > BUILD_INTERNO) {
+          showDialog(
+            context: context,
+            barrierDismissible:
+                false, // 👈 Bloqueia a tela! O usuário não consegue fechar.
+            builder: (ctx) => PopScope(
+              canPop: false, // Trava o botão de voltar do celular
+              child: AlertDialog(
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20)),
+                title: const Row(children: [
+                  Icon(Icons.system_update_alt, color: Colors.green),
+                  SizedBox(width: 10),
+                  Text('Atualização Exigida',
+                      style: TextStyle(
+                          color: Colors.green, fontWeight: FontWeight.bold)),
+                ]),
+                content: const Text(
+                  'Uma nova versão obrigatória do DOUB Finanças está disponível!\n\nPor favor, atualize para continuar usando o aplicativo com segurança.',
+                ),
+                actions: [
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.green),
+                      icon: const Icon(Icons.download, color: Colors.white),
+                      label: const Text('Baixar Nova Versão',
+                          style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold)),
+                      onPressed: () async {
+                        try {
+                          Uri url = Uri.parse(linkDown);
+                          // Removemos o "canLaunchUrl" que o Android bloqueia e mandamos abrir direto!
+                          await launchUrl(url,
+                              mode: LaunchMode.externalApplication);
+                        } catch (e) {
+                          debugPrint("Erro ao abrir link: $e");
+                        }
+                      },
+                    ),
+                  )
+                ],
+              ),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      // Se estiver sem internet, ignora e tenta na próxima vez
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    //Future.microtask(() => _injetarConfiguracoesIniciaisBanco());
+    _verificarFamiliaSalva();
+
+    if (!widget.manterDesbloqueado) {
+      _iniciarAnimacaoCinema();
+    }
+    // 👇 O app mal abriu e já verifica sorrateiramente se tem versão nova!
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _verificarAtualizacaoObrigatoria();
+    });
+  }
+
+  void _verificarFamiliaSalva() async {
+    final prefs = await SharedPreferences.getInstance();
+    String? familia = prefs.getString('familiaAberta');
+    if (familia != null && familia.isNotEmpty && mounted) {
+      setState(() {
+        _nomeFamiliaAtual = familia;
+        _familiaDesbloqueada = true;
+      });
+    }
+  }
+
+  void _iniciarAnimacaoCinema() async {
+    await Future.delayed(const Duration(milliseconds: 200));
+    if (mounted) setState(() => _mostrarDoub = true);
+
+    await Future.delayed(const Duration(milliseconds: 1600));
+    if (mounted) setState(() => _mostrarFinancas = true);
+
+    await Future.delayed(const Duration(milliseconds: 1000));
+    if (mounted) setState(() => _moverParaCima = true);
+
+    await Future.delayed(const Duration(milliseconds: 800));
+    if (mounted) setState(() => _mostrarRestoDaTela = true);
+  }
+
+  void _tentarLoginDireto() async {
+    FocusScope.of(context).unfocus();
+
+    String familiaDigitada = _usuarioCtrl.text.trim().toUpperCase();
+    if (familiaDigitada.isEmpty) return;
+
+    var doc = await FirebaseFirestore.instance
+        .collection('familias')
+        .doc(familiaDigitada)
+        .get();
+
+    if (!mounted) return;
+
+    if (doc.exists && doc.data()!['senha'] == _senhaCtrl.text) {
+      final prefs = await SharedPreferences.getInstance();
+
+      // 🛡️ A BARREIRA DO 2FA
+      // Verifica se ESSE dispositivo já foi verificado por e-mail para ESSA família
+      bool dispositivoVerificado =
+          prefs.getBool('dispositivo_verificado_$familiaDigitada') ?? false;
+
+      if (dispositivoVerificado) {
+        // Se já tem o selo, entra direto!
+        await prefs.setString('familiaAberta', familiaDigitada);
+        setState(() {
+          _nomeFamiliaAtual = familiaDigitada;
+          _familiaDesbloqueada = true;
+          _loginIncorreto = false;
         });
+      } else {
+        // Se não tem o selo, manda para a tela de Verificação (2FA)!
+        String dono = doc.data()!['dono'] ?? 'Membro DOUB';
+        String email = doc.data()!['email'] ?? '';
+
+        if (email.isEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+              content: Text('Erro: Família sem e-mail cadastrado.',
+                  style: TextStyle(color: Colors.white)),
+              backgroundColor: Colors.red));
+          return;
+        }
+
+        // 👇 ADICIONAMOS O AWAIT PARA ESPERAR O RESULTADO DA TELA DE 2FA
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => TelaVerificacao2FA(
+              familiaLogada: familiaDigitada,
+              donoFamilia: dono,
+              emailDestino: email,
+            ),
+          ),
+        );
+      }
+    } else {
+      setState(() => _loginIncorreto = true);
+    }
+  }
+
+  void _entrarNoPerfilDireto(BuildContext context, String usuario) {
+    Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+            builder: (context) => TelaNavegacao(
+                usuarioLogado: usuario, familiaLogada: _nomeFamiliaAtual)));
   }
 
   @override
   Widget build(BuildContext context) {
     bool isDark = Theme.of(context).brightness == Brightness.dark;
+    Color corFundo = isDark ? const Color(0xFF121212) : Colors.green.shade50;
+
     return Scaffold(
-      backgroundColor: isDark ? const Color(0xFF121212) : Colors.green.shade50,
-      body: Center(
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(Icons.account_balance_wallet,
-                  size: 80, color: Colors.green),
-              const SizedBox(height: 10),
-              Stack(clipBehavior: Clip.none, children: [
-                const FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: Text('DOUB',
-                      style: TextStyle(
-                          fontSize: 36,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.green,
-                          letterSpacing: 2)),
-                ),
-                Positioned(
-                    bottom: -8,
-                    right: 0,
-                    child: const Text('2.4',
-                        style: TextStyle(
-                            color: Colors.green,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w900)))
-              ]),
-              const SizedBox(height: 50),
-              const Text('Quem está acessando?',
-                  style: TextStyle(fontSize: 16, color: Colors.grey)),
-              const SizedBox(height: 40),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
+      backgroundColor: corFundo,
+      // 👇 A MÁGICA CONTRA A TELA ZEBRADA: LayoutBuilder + IntrinsicHeight
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          var children2 = [
+            // O Motor da Animação (Reduzido para 20% para caber o form!)
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 1000),
+              curve: Curves.easeInOut,
+              height: _moverParaCima ? 80 : constraints.maxHeight * 0.38,
+            ),
+            SizedBox(
+              height: 120,
+              child: Stack(
+                alignment: Alignment.center,
+                clipBehavior: Clip.none,
                 children: [
-                  GestureDetector(
-                      onTap: () => _abrirDialogSenha(context, 'Eduardo'),
-                      child: Column(children: [
-                        CircleAvatar(
-                            radius: 50,
-                            backgroundColor: Colors.blue.shade100,
-                            child: const Icon(Icons.face,
-                                size: 50, color: Colors.blue)),
-                        const SizedBox(height: 10),
-                        const Text('Eduardo',
-                            style: TextStyle(
-                                fontSize: 18, fontWeight: FontWeight.bold))
-                      ])),
-                  const SizedBox(width: 40),
-                  GestureDetector(
-                      onTap: () => _abrirDialogSenha(context, 'Naiub'),
-                      child: Column(children: [
-                        CircleAvatar(
-                            radius: 50,
-                            backgroundColor: Colors.pink.shade100,
-                            child: const Icon(Icons.face_3,
-                                size: 50, color: Colors.pink)),
-                        const SizedBox(height: 10),
-                        const Text('Naiub',
-                            style: TextStyle(
-                                fontSize: 18, fontWeight: FontWeight.bold))
-                      ])),
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 1000),
+                    curve: Curves.easeOutBack,
+                    transform: Matrix4.translationValues(
+                        0, _mostrarFinancas ? 35.0 : 0.0, 0),
+                    child: AnimatedOpacity(
+                      duration: const Duration(milliseconds: 800),
+                      opacity: _mostrarFinancas ? 1.0 : 0.0,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                              width: 30, height: 1.5, color: Colors.white),
+                          const Padding(
+                            padding: EdgeInsets.symmetric(horizontal: 8.0),
+                            child: Text('FINANÇAS',
+                                style: TextStyle(
+                                    fontSize: 15,
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.normal,
+                                    letterSpacing: 2)),
+                          ),
+                          Container(
+                              width: 30, height: 1.5, color: Colors.white),
+                        ],
+                      ),
+                    ),
+                  ),
+                  Container(
+                    height: 55,
+
+                    padding: const EdgeInsets.only(
+                        left:
+                            5.0), // Vai empurrar o DOUB um pouquinho para a esquerda                    alignment: Alignment.center,
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Text('D',
+                                style: TextStyle(
+                                    fontFamily: 'TabPearl',
+                                    fontSize: 35,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white)),
+                            AnimatedContainer(
+                              duration: const Duration(milliseconds: 1500),
+                              curve: Curves.easeOutQuart,
+                              width: _mostrarDoub ? 105.0 : 0.0,
+                              child: const ClipRect(
+                                child: OverflowBox(
+                                  alignment: Alignment.centerLeft,
+                                  maxWidth: 105.0,
+                                  minWidth: 105.0,
+                                  child: Text('OUB',
+                                      style: TextStyle(
+                                          fontFamily: 'TabPearl',
+                                          fontSize: 35,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.white,
+                                          letterSpacing: 2),
+                                      maxLines: 1,
+                                      softWrap: false),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        if (isNatal())
+                          Positioned(
+                              top: -20,
+                              left: -25,
+                              child: Image.asset(
+                                  'assets/imagens/chapeu_natal.png',
+                                  width: 55,
+                                  height: 55)),
+                      ],
+                    ),
+                  ),
                 ],
               ),
-              const SizedBox(height: 50),
-            ],
-          ),
-        ),
+            ),
+            const Spacer(),
+
+            // A REVELAÇÃO DO CONTEÚDO
+            // A REVELAÇÃO DO CONTEÚDO
+            AnimatedOpacity(
+              duration: const Duration(milliseconds: 800),
+              opacity: _mostrarRestoDaTela ? 1.0 : 0.0,
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 500),
+                  child: Column(
+                    children: [
+                      // =======================================================
+                      // ESTADO 1: FORMULÁRIO DIRETO NA TELA (Sem pop-up)
+                      // =======================================================
+                      if (!_familiaDesbloqueada) ...[
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 35),
+                          child: Column(
+                            children: [
+                              const SizedBox(height: 20),
+                              TextField(
+                                controller: _usuarioCtrl,
+                                textCapitalization:
+                                    TextCapitalization.characters,
+                                decoration: InputDecoration(
+                                  labelText: 'Nome da Família',
+                                  filled: true,
+                                  fillColor: isDark
+                                      ? Colors.grey.shade900
+                                      : Colors.white,
+                                  border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                      borderSide: BorderSide.none),
+                                  prefixIcon: const Icon(Icons.group),
+                                ),
+                              ),
+                              const SizedBox(height: 15),
+                              TextField(
+                                controller: _senhaCtrl,
+                                obscureText: !_mostrarSenha,
+                                onSubmitted: (_) => _tentarLoginDireto(),
+                                decoration: InputDecoration(
+                                  labelText: 'Senha',
+                                  filled: true,
+                                  fillColor: isDark
+                                      ? Colors.grey.shade900
+                                      : Colors.white,
+                                  border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                      borderSide: BorderSide.none),
+                                  prefixIcon: const Icon(Icons.lock),
+                                  suffixIcon: IconButton(
+                                    icon: Icon(
+                                        _mostrarSenha
+                                            ? Icons.visibility
+                                            : Icons.visibility_off,
+                                        color: Colors.grey),
+                                    onPressed: () => setState(
+                                        () => _mostrarSenha = !_mostrarSenha),
+                                  ),
+                                ),
+                              ),
+                              if (_loginIncorreto) ...[
+                                const SizedBox(height: 10),
+                                const Text(
+                                    'Nome da Família ou senha incorretos!',
+                                    style: TextStyle(
+                                        color: Colors.red,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 13)),
+                              ],
+                              const SizedBox(height: 25),
+                              SizedBox(
+                                width: double.infinity,
+                                height: 50,
+                                child: ElevatedButton(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Color(0xff235224),
+                                    shape: RoundedRectangleBorder(
+                                        borderRadius:
+                                            BorderRadius.circular(12)),
+                                  ),
+                                  onPressed: _tentarLoginDireto,
+                                  child: const Text('ENTRAR',
+                                      style: TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.normal,
+                                          color: Colors.white,
+                                          letterSpacing: 1.5)),
+                                ),
+                              ),
+                              // 👇 ADICIONE ESTAS DUAS LINHAS AQUI 👇
+                              const SizedBox(height: 15),
+                              TextButton(
+                                onPressed: _iniciarRecuperacaoSenha,
+                                child: const Text('Esqueci a senha',
+                                    style: TextStyle(color: Colors.grey)),
+                              ),
+                              const SizedBox(height: 5), // Espaçamento
+                              TextButton(
+                                onPressed: () {
+                                  Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                          builder: (context) =>
+                                              const TelaCadastroFamilia()));
+                                },
+                                child: const Text(
+                                    'Ainda não tem uma família? Cadastre-se',
+                                    style: TextStyle(
+                                        color: Colors.green,
+                                        fontWeight: FontWeight.bold)),
+                              ),
+                            ],
+                          ),
+                        )
+                      ]
+                      // =======================================================
+                      // ESTADO 2: FAMÍLIA LOGADA (Mostra os Avatares Direto!)
+                      // =======================================================
+                      else ...[
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                                _modoEdicaoAvatares
+                                    ? 'Modo Edição'
+                                    : 'Família $_nomeFamiliaAtual', // 👉 O TEXTO MUDA AQUI!
+                                style: TextStyle(
+                                    fontSize: 18,
+                                    color: _modoEdicaoAvatares
+                                        ? Colors.orange
+                                        : Colors
+                                            .green, // 👉 FICA LARANJA NA EDIÇÃO!
+                                    fontWeight: FontWeight.bold)),
+                            const SizedBox(width: 8),
+                            IconButton(
+                              icon: Icon(Icons.settings,
+                                  color: _modoEdicaoAvatares
+                                      ? Colors.green
+                                      : Colors.grey,
+                                  size: 22),
+                              onPressed: () => setState(() =>
+                                  _modoEdicaoAvatares = !_modoEdicaoAvatares),
+                            )
+                          ],
+                        ),
+                        const SizedBox(height: 15),
+                        // 👇 STREAMBUILDER DINÂMICO COM SUPORTE A CORES E EDIÇÃO!
+                        StreamBuilder<QuerySnapshot>(
+                          stream: FirebaseFirestore.instance
+                              .collection('usuarios')
+                              .where('familiaId', isEqualTo: _nomeFamiliaAtual)
+                              .snapshots(),
+                          builder: (context, snapshot) {
+                            if (snapshot.connectionState ==
+                                ConnectionState.waiting) {
+                              return const CircularProgressIndicator(
+                                  color: Colors.green);
+                            }
+
+                            var docsUsuarios =
+                                snapshot.hasData ? snapshot.data!.docs : [];
+
+                            return Wrap(
+                              spacing: 25,
+                              runSpacing: 20,
+                              alignment: WrapAlignment.center,
+                              children: [
+                                // 1. LISTA OS MEMBROS JÁ CADASTRADOS
+                                ...docsUsuarios.map((doc) {
+                                  var dados =
+                                      doc.data() as Map<String, dynamic>;
+                                  String docId = doc.id;
+                                  String nomeUsuario =
+                                      dados['nome'] ?? 'Membro';
+
+                                  // Pega a cor salva no banco (ou usa azul como padrão)
+                                  int corValor =
+                                      dados['cor'] ?? Colors.blue.value;
+                                  Color corMembro = Color(corValor);
+
+                                  return Stack(
+                                    clipBehavior: Clip.none,
+                                    children: [
+                                      // BOTÃO DO PERFIL
+                                      // BOTÃO DO PERFIL
+                                      GestureDetector(
+                                        onTap: () {
+                                          // 👉 SÓ ENTRA NO PERFIL SE NÃO ESTIVER EDITANDO!
+                                          if (!_modoEdicaoAvatares) {
+                                            _entrarNoPerfilDireto(
+                                                context, nomeUsuario);
+                                          }
+                                        },
+                                        child: Column(
+                                          children: [
+                                            Container(
+                                              padding: const EdgeInsets.all(15),
+                                              decoration: BoxDecoration(
+                                                color: corMembro.withValues(
+                                                    alpha: 0.1),
+                                                shape: BoxShape.circle,
+                                                border: Border.all(
+                                                    color: corMembro, width: 2),
+                                              ),
+                                              child: Icon(Icons.person,
+                                                  size: 50, color: corMembro),
+                                            ),
+                                            const SizedBox(height: 10),
+                                            Text(
+                                              nomeUsuario,
+                                              style: TextStyle(
+                                                fontSize: 16,
+                                                fontWeight: FontWeight.bold,
+                                                color: isDark
+                                                    ? Colors.white
+                                                    : Colors.black,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      // ✏️ BOTÃO DE EDIÇÃO (LÁPIS) NO CANTO DO AVATAR
+                                      if (_modoEdicaoAvatares) // 👉 ADICIONE ESTE IF AQUI!
+                                        Positioned(
+                                          right: 0,
+                                          top: 0,
+                                          child: InkWell(
+                                            onTap: () =>
+                                                _mostrarModalEditarMembro(
+                                                    context,
+                                                    docId,
+                                                    nomeUsuario,
+                                                    corValor),
+                                            child: Container(
+                                              padding: const EdgeInsets.all(6),
+                                              decoration: BoxDecoration(
+                                                color: isDark
+                                                    ? Colors.grey.shade800
+                                                    : Colors.white,
+                                                shape: BoxShape.circle,
+                                                boxShadow: [
+                                                  BoxShadow(
+                                                      color: Colors.black12,
+                                                      blurRadius: 4)
+                                                ],
+                                                border: Border.all(
+                                                    color:
+                                                        Colors.grey.shade400),
+                                              ),
+                                              child: const Icon(Icons.edit,
+                                                  size: 14, color: Colors.grey),
+                                            ),
+                                          ),
+                                        ),
+                                    ],
+                                  );
+                                }).toList(),
+
+                                // 2. BOTÃO DE ADICIONAR NOVO MEMBRO (+)
+                                // 2. BOTÃO DE ADICIONAR NOVO MEMBRO (+)
+                                if (_modoEdicaoAvatares) // 👉 ADICIONE ESTA LINHA AQUI! ELE SÓ VAI APARECER NA EDIÇÃO!
+                                  GestureDetector(
+                                    onTap: () =>
+                                        _mostrarModalAdicionarMembro(context),
+                                    child: Column(
+                                      children: [
+                                        Container(
+                                          padding: const EdgeInsets.all(15),
+                                          decoration: BoxDecoration(
+                                            color: Colors.green
+                                                .withValues(alpha: 0.1),
+                                            shape: BoxShape.circle,
+                                            border: Border.all(
+                                                color: Colors.green,
+                                                width: 2,
+                                                style: BorderStyle.solid),
+                                          ),
+                                          child: const Icon(Icons.add,
+                                              size: 50, color: Colors.green),
+                                        ),
+                                        const SizedBox(height: 10),
+                                        const Text(
+                                          'Adicionar',
+                                          style: TextStyle(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.green,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                              ],
+                            );
+                          },
+                        ),
+                        const SizedBox(height: 30),
+                        TextButton(
+                          onPressed: () async {
+                            final prefs = await SharedPreferences.getInstance();
+                            await prefs.remove('familiaAberta');
+                            setState(() {
+                              _usuarioCtrl.clear();
+                              _senhaCtrl.clear();
+                              _familiaDesbloqueada = false;
+                              _nomeFamiliaAtual = '';
+                            });
+                          },
+                          child: const Text('Sair da Família',
+                              style:
+                                  TextStyle(color: Colors.grey, fontSize: 15)),
+                        )
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            const Spacer(flex: 2),
+
+            // O RODAPÉ VEIO PARA DENTRO DA ÁREA FLEXÍVEL
+            AnimatedOpacity(
+              duration: const Duration(milliseconds: 800),
+              opacity: _mostrarRestoDaTela ? 1.0 : 0.0,
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: 20.0),
+                child: Text(
+                  'Build 10\n© ${DateTime.now().year} DOUB. Todos os direitos reservados.',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                      fontSize: 14.5,
+                      color: Color(0xffcdcaca),
+                      fontWeight: FontWeight.w500),
+                ),
+              ),
+            ), // AnimatedOpacity
+          ]; // 👈 Fim da lista children2!
+
+          // 👇 O RETORNO DA TELA, AGORA CENTRALIZADO PARA O PC 👇
+          return Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 500),
+              child: SingleChildScrollView(
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    minHeight: constraints.maxHeight, // 👈 Agora ele reconhece!
+                  ),
+                  child: IntrinsicHeight(
+                    child: Column(
+                      children:
+                          children2, // 👈 E agora ele reconhece a lista também!
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
       ),
     );
+  }
+
+  void _iniciarRecuperacaoSenha() async {
+    String familiaDigitada = _usuarioCtrl.text.trim().toUpperCase();
+    if (familiaDigitada.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Digite o nome da Família no campo "Usuário" primeiro!',
+              style: TextStyle(color: Colors.white)),
+          backgroundColor: Colors.red));
+      return;
+    }
+
+    var doc = await FirebaseFirestore.instance
+        .collection('familias')
+        .doc(familiaDigitada)
+        .get();
+    if (!doc.exists) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Família não encontrada!',
+              style: TextStyle(color: Colors.white)),
+          backgroundColor: Colors.red));
+      return;
+    }
+
+    String email = doc.data()!['email'] ?? '';
+    String dono = doc.data()!['dono'] ?? 'Membro';
+
+    if (email.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Esta família não tem e-mail cadastrado.',
+              style: TextStyle(color: Colors.white)),
+          backgroundColor: Colors.red));
+      return;
+    }
+
+    showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (c) => const Center(
+            child: CircularProgressIndicator(color: Colors.green)));
+
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    final rnd = Random.secure();
+    String codigoGerado = String.fromCharCodes(Iterable.generate(
+        8, (_) => chars.codeUnitAt(rnd.nextInt(chars.length))));
+
+    try {
+      final response = await http.post(
+        Uri.parse('https://doub-email-sender.eduardoliveira2003.workers.dev'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'emailDestino': email,
+          'nomeDono': dono,
+          'codigo2FA': codigoGerado
+        }),
+      );
+      if (!context.mounted) return;
+      Navigator.pop(context); // Fecha loading
+      if (response.statusCode == 200) {
+        _mostrarModalNovaSenha(familiaDigitada, codigoGerado);
+      } else {
+        throw Exception('Falha no servidor');
+      }
+    } catch (e) {
+      Navigator.pop(context); // Fecha loading
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Erro ao enviar e-mail: $e'),
+          backgroundColor: Colors.red));
+    }
+  }
+
+  void _mostrarModalNovaSenha(String familiaId, String codigoCorreto) {
+    final codigoCtrl = TextEditingController();
+    final novaSenhaCtrl = TextEditingController();
+    bool mostrar = false;
+    showDialog(
+        context: context,
+        builder: (ctx) => StatefulBuilder(
+            builder: (c, setS) => AlertDialog(
+                  title: const Text('Recuperação de Senha'),
+                  content: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text('Enviamos um código para o e-mail da família.',
+                          style: TextStyle(fontSize: 13, color: Colors.grey)),
+                      const SizedBox(height: 15),
+                      TextField(
+                          controller: codigoCtrl,
+                          textCapitalization: TextCapitalization.characters,
+                          decoration: const InputDecoration(
+                              labelText: 'Código de 8 dígitos',
+                              border: OutlineInputBorder())),
+                      const SizedBox(height: 15),
+                      TextField(
+                          controller: novaSenhaCtrl,
+                          obscureText: !mostrar,
+                          decoration: InputDecoration(
+                              labelText: 'Nova Senha',
+                              border: const OutlineInputBorder(),
+                              suffixIcon: IconButton(
+                                  icon: Icon(
+                                      mostrar
+                                          ? Icons.visibility
+                                          : Icons.visibility_off,
+                                      color: Colors.grey),
+                                  onPressed: () =>
+                                      setS(() => mostrar = !mostrar)))),
+                    ],
+                  ),
+                  actions: [
+                    TextButton(
+                        onPressed: () => Navigator.pop(ctx),
+                        child: const Text('Cancelar')),
+                    ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.green),
+                      onPressed: () async {
+                        if (codigoCtrl.text.trim().toUpperCase() !=
+                            codigoCorreto) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                  content: Text('Código inválido!',
+                                      style: TextStyle(color: Colors.white)),
+                                  backgroundColor: Colors.red));
+                          return;
+                        }
+                        if (novaSenhaCtrl.text.isEmpty) return;
+                        await FirebaseFirestore.instance
+                            .collection('familias')
+                            .doc(familiaId)
+                            .update({'senha': novaSenhaCtrl.text.trim()});
+                        if (!context.mounted) return;
+                        Navigator.pop(ctx);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                                content: Text('Senha alterada com sucesso!',
+                                    style: TextStyle(color: Colors.white)),
+                                backgroundColor: Colors.green));
+                      },
+                      child: const Text('Salvar Nova Senha',
+                          style: TextStyle(color: Colors.white)),
+                    )
+                  ],
+                )));
   }
 }
 
 void sairDoUsuario(BuildContext context) async {
   Navigator.pushReplacement(
-      context, MaterialPageRoute(builder: (context) => const TelaSplash()));
+      context,
+      MaterialPageRoute(
+          // Passamos o 'true' para ele pular o cadeado e ir direto pros avatares!
+          builder: (context) => const TelaLogin(manterDesbloqueado: true)));
 }
 
 class MenuLateral extends StatelessWidget {
   final String usuarioLogado;
-  const MenuLateral({super.key, required this.usuarioLogado});
+  final String familiaLogada; // 👉 NOVA LINHA
+  const MenuLateral(
+      {super.key,
+      required this.usuarioLogado,
+      required this.familiaLogada}); // 👉 CORRIGIDO;
 
   void _abrirNews(BuildContext context) {
     final ScrollController scrollController = ScrollController();
@@ -613,7 +1421,7 @@ class MenuLateral extends StatelessWidget {
                 if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
                   return const Center(
                     child: Text('Nenhuma novidade por enquanto.',
-                        style: TextStyle(color: Colors.grey)),
+                        style: TextStyle(color: Color(0xffe5dbdb))),
                   );
                 }
 
@@ -645,7 +1453,7 @@ class MenuLateral extends StatelessWidget {
             onPressed: () => Navigator.pop(context),
             child: const Text('Fechar',
                 style: TextStyle(
-                    color: Colors.green, fontWeight: FontWeight.bold)),
+                    color: Color(0xffdadeda), fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -665,10 +1473,15 @@ class MenuLateral extends StatelessWidget {
 
       var query = await FirebaseFirestore.instance
           .collection('lancamentos')
+          .where('familiaId', isEqualTo: familiaLogada) // 👉 CORRIGIDO
           .where('data', isGreaterThanOrEqualTo: Timestamp.fromDate(inicio))
           .where('data', isLessThan: Timestamp.fromDate(fim))
-          .orderBy('data', descending: true)
           .get();
+
+      // 👇 Ordenação super rápida direto na memória do aparelho
+      var docsOrdenados = query.docs.toList();
+      docsOrdenados.sort((a, b) => (b.data() as Map<String, dynamic>)['data']
+          .compareTo((a.data() as Map<String, dynamic>)['data']));
 
       Map<String, dynamic> mData = {
         "mes": mesExportacao.month,
@@ -681,8 +1494,8 @@ class MenuLateral extends StatelessWidget {
         "totPoupanca": 0.0
       };
 
-      for (var doc in query.docs) {
-        var d = doc.data();
+      for (var doc in docsOrdenados) {
+        var d = doc.data() as Map<String, dynamic>; // Mude para forçar o Map
         double val = (d['valor'] ?? 0.0).toDouble();
         String desc = (d['descricao'] ?? 'Sem nome').toString();
         String resp = (d['responsavel'] ?? 'N/A').toString();
@@ -962,7 +1775,7 @@ class MenuLateral extends StatelessWidget {
 
       String nomeArquivo = "DOUB_${nomeMes}_${mData['ano']}.xls";
 
-      final anchor = html.AnchorElement(href: url)
+      html.AnchorElement(href: url)
         ..setAttribute("download", nomeArquivo)
         ..click();
       html.Url.revokeObjectUrl(url);
@@ -1059,8 +1872,9 @@ class MenuLateral extends StatelessWidget {
               accountName: Text(usuarioLogado,
                   style: const TextStyle(
                       fontSize: 22, fontWeight: FontWeight.bold)),
-              accountEmail: const Text('Gestor Financeiro DOUB'),
-              decoration: BoxDecoration(color: Colors.green.shade700)),
+              accountEmail:
+                  Text('Família: $familiaLogada'), // 👈 MUITO MAIS PROFISSIONAL
+              decoration: const BoxDecoration(color: Color(0xff3d3d3d))),
           ListTile(
               leading: const Icon(Icons.newspaper, color: Colors.blue),
               title: const Text('DOUB News'),
@@ -1083,7 +1897,7 @@ class MenuLateral extends StatelessWidget {
               title: const Text('Configurações'),
               onTap: () {
                 Navigator.pop(context);
-                abrirConfiguracoes(context);
+                abrirConfiguracoes(context, familiaLogada);
               }),
           ListTile(
               leading: const Icon(Icons.logout, color: Colors.red),
@@ -1102,40 +1916,91 @@ class MenuLateral extends StatelessWidget {
 class SeletorMes extends StatelessWidget {
   final DateTime dataAtual;
   final Function(int) aoMudar;
-  const SeletorMes({super.key, required this.dataAtual, required this.aoMudar});
+  final bool travarFuturo;
+  final bool isAnual; // 👈 NOVA CHAVE MÁGICA PARA A ABA ANUAL!
+
+  const SeletorMes({
+    super.key,
+    required this.dataAtual,
+    required this.aoMudar,
+    this.travarFuturo = false,
+    this.isAnual = false, // Por padrão é falso (Mostra o Mês normal)
+  });
+
   @override
   Widget build(BuildContext context) {
-    bool isDark = Theme.of(context).brightness == Brightness.dark;
-    return Container(
+    bool podeAvancar = true;
+
+    if (travarFuturo) {
+      DateTime hoje = DateTime.now();
+      if (isAnual) {
+        // Na aba Anual, a trava não deixa ir pro Ano que vem!
+        podeAvancar = dataAtual.year < hoje.year;
+      } else {
+        // 👇 Na aba Mensal, a regra agora é exata: não passa do mês atual!
+        DateTime mesMaximo = DateTime(hoje.year, hoje.month);
+
+        podeAvancar = dataAtual.year < mesMaximo.year ||
+            (dataAtual.year == mesMaximo.year &&
+                dataAtual.month < mesMaximo.month);
+      }
+    }
+
+    List<String> meses = [
+      'JANEIRO',
+      'FEVEREIRO',
+      'MARÇO',
+      'ABRIL',
+      'MAIO',
+      'JUNHO',
+      'JULHO',
+      'AGOSTO',
+      'SETEMBRO',
+      'OUTUBRO',
+      'NOVEMBRO',
+      'DEZEMBRO'
+    ];
+
+    // 👇 Se a aba for anual, mostra SÓ O ANO. Se não, mostra "MÊS ANO"
+    String texto = isAnual
+        ? "${dataAtual.year}"
+        : "${meses[dataAtual.month - 1]} ${dataAtual.year}";
+
+    // 👇 Se for Anual, a seta pula 12 meses de uma vez. Se for mensal, pula 1 mês.
+    int pulo = isAnual ? 12 : 1;
+
+    return Padding(
       padding: const EdgeInsets.symmetric(vertical: 10),
-      color: isDark ? const Color(0xFF1A1A1A) : Colors.green.shade50,
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           IconButton(
-              icon: const Icon(Icons.arrow_back_ios,
-                  size: 18, color: Colors.green),
-              onPressed: () => aoMudar(-1)),
-          const SizedBox(width: 10),
-          Text(
-              '${obterNomeMes(dataAtual.month).toUpperCase()} ${dataAtual.year}',
+            icon: const Icon(Icons.chevron_left,
+                color: Color(0xFF00E676), size: 28),
+            onPressed: () => aoMudar(-pulo),
+          ),
+          const SizedBox(width: 15),
+          Text(texto,
               style: const TextStyle(
-                  fontSize: 18,
+                  fontSize: 16,
                   fontWeight: FontWeight.bold,
-                  color: Colors.green,
-                  letterSpacing: 1)),
-          const SizedBox(width: 10),
+                  color: Color(0xFF00E676),
+                  letterSpacing: 1.2)),
+          const SizedBox(width: 15),
           IconButton(
-              icon: const Icon(Icons.arrow_forward_ios,
-                  size: 18, color: Colors.green),
-              onPressed: () => aoMudar(1)),
+            icon: Icon(Icons.chevron_right,
+                color:
+                    podeAvancar ? const Color(0xFF00E676) : Colors.transparent,
+                size: 28),
+            onPressed: podeAvancar ? () => aoMudar(pulo) : null,
+          ),
         ],
       ),
     );
   }
 }
 
-void _gerenciarCategorias(BuildContext context) {
+void _gerenciarCategorias(BuildContext context, String familiaLogada) {
   showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -1149,17 +2014,20 @@ void _gerenciarCategorias(BuildContext context) {
             body: StreamBuilder<QuerySnapshot>(
                 stream: FirebaseFirestore.instance
                     .collection('categorias')
+                    .where('familiaId',
+                        isEqualTo: familiaLogada) // 👉 FILTRO ADICIONADO!
                     .where('ativo', isEqualTo: true)
                     .snapshots(),
                 builder: (c, s) {
-                  if (!s.hasData)
+                  if (!s.hasData) {
                     return const Center(child: CircularProgressIndicator());
+                  }
                   return ListView(
                       children: s.data!.docs.map((doc) {
                     var d = doc.data() as Map<String, dynamic>;
                     return ListTile(
                         leading: Icon(
-                            IconData(d['icone'], fontFamily: 'MaterialIcons'),
+                            mapaDeIcones[d['icone']] ?? Icons.category,
                             color: Color(d['cor'])),
                         title: Text(d['nome']),
                         trailing: IconButton(
@@ -1236,15 +2104,22 @@ void _novaCategoria(BuildContext context) {
                     onPressed: () => Navigator.pop(ctx),
                     child: const Text('Cancelar')),
                 ElevatedButton(
-                    onPressed: () {
+                    onPressed: () async {
+                      // 👉 1. O ASYNC PRECISA ESTAR AQUI
                       if (nomeCtrl.text.isNotEmpty) {
+                        // 👉 2. A VARIÁVEL TEM QUE NASCER AQUI DENTRO DO IF!
+                        final prefs = await SharedPreferences.getInstance();
+                        String familiaAtual =
+                            prefs.getString('familiaAberta') ?? 'DOUB';
+
                         FirebaseFirestore.instance
                             .collection('categorias')
                             .add({
                           'nome': nomeCtrl.text,
                           'icone': iconeSel.codePoint,
-                          'cor': corSel.value,
-                          'ativo': true
+                          'cor': corSel.toARGB32(),
+                          'ativo': true,
+                          'familiaId': familiaAtual // 👉 AGORA ELE ENXERGA!
                         });
                         Navigator.pop(ctx);
                       }
@@ -1258,14 +2133,22 @@ void _novaCategoria(BuildContext context) {
 class CategoriaSelector extends StatelessWidget {
   final List<String> selecionadas;
   final Function(List<String>) onChanged;
+  final String familiaLogada; // 👉 VARIÁVEL ADICIONADA AQUI!
+
   const CategoriaSelector(
-      {super.key, required this.selecionadas, required this.onChanged});
+      {super.key,
+      required this.selecionadas,
+      required this.onChanged,
+      required this.familiaLogada});
+
   @override
   Widget build(BuildContext context) {
     bool isDark = Theme.of(context).brightness == Brightness.dark;
     return StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance
             .collection('categorias')
+            .where('familiaId',
+                isEqualTo: familiaLogada) // 👉 FILTRO ADICIONADO AQUI!
             .where('ativo', isEqualTo: true)
             .snapshots(),
         builder: (context, snap) {
@@ -1280,8 +2163,7 @@ class CategoriaSelector extends StatelessWidget {
                     padding: const EdgeInsets.only(right: 8.0),
                     child: FilterChip(
                         label: Row(mainAxisSize: MainAxisSize.min, children: [
-                          Icon(
-                              IconData(d['icone'], fontFamily: 'MaterialIcons'),
+                          Icon(mapaDeIcones[d['icone']] ?? Icons.category,
                               size: 16,
                               color: isSel ? Colors.white : Color(d['cor'])),
                           const SizedBox(width: 5),
@@ -1298,10 +2180,11 @@ class CategoriaSelector extends StatelessWidget {
                         checkmarkColor: Colors.white,
                         onSelected: (b) {
                           List<String> l = List.from(selecionadas);
-                          if (b)
+                          if (b) {
                             l.add(doc.id);
-                          else
+                          } else {
                             l.remove(doc.id);
+                          }
                           onChanged(l);
                         }));
               }).toList(),
@@ -1313,7 +2196,9 @@ class CategoriaSelector extends StatelessWidget {
 
 class TelaNavegacao extends StatefulWidget {
   final String usuarioLogado;
-  const TelaNavegacao({super.key, required this.usuarioLogado});
+  final String familiaLogada; // 👉 RECEBENDO DA TELA DE LOGIN
+  const TelaNavegacao(
+      {super.key, required this.usuarioLogado, required this.familiaLogada});
   @override
   State<TelaNavegacao> createState() => _TelaNavegacaoState();
 }
@@ -1325,12 +2210,32 @@ class _TelaNavegacaoState extends State<TelaNavegacao> {
   @override
   void initState() {
     super.initState();
+    _carregarFamiliaECategorias(); // 👉 1. Chama a função que busca a família e o cache
     _realizarManutencaoMensal();
 
     // ⚙️ Diz para o app: "Assim que a tela carregar, verifique as novidades!"
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _verificarNovidades();
     });
+  }
+
+  // 👉 NOVIDADE: A função que faz o trabalho duro antes da tela aparecer
+  void _carregarFamiliaECategorias() async {
+    // Carrega só as categorias da família que está logada!
+    var catsGetCache = await FirebaseFirestore.instance
+        .collection('categorias')
+        .where('familiaId', isEqualTo: widget.familiaLogada)
+        .get();
+
+    cacheCategoriasGeral.clear(); // Limpa a memória
+    for (var doc in catsGetCache.docs) {
+      cacheCategoriasGeral[doc.id] = doc.data(); // Guarda as categorias certas
+    }
+
+    // Força a tela a desenhar de novo com os dados corretos!
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   // ⚙️ O MOTOR DO POP-UP DE NOTIFICAÇÃO
@@ -1406,6 +2311,8 @@ class _TelaNavegacaoState extends State<TelaNavegacao> {
       var batch = FirebaseFirestore.instance.batch();
       var antigos = await FirebaseFirestore.instance
           .collection('lancamentos')
+          .where('familiaId',
+              isEqualTo: widget.familiaLogada) // 👉 FILTRO ADICIONADO AQUI!
           .where('data', isLessThan: Timestamp.fromDate(limitePassado))
           .get();
       for (var doc in antigos.docs) {
@@ -1416,6 +2323,8 @@ class _TelaNavegacaoState extends State<TelaNavegacao> {
       }
       var fixas = await FirebaseFirestore.instance
           .collection('lancamentos')
+          .where('familiaId',
+              isEqualTo: widget.familiaLogada) // 👉 FILTRO ADICIONADO AQUI!
           .where('isContaFixa', isEqualTo: true)
           .get();
       Map<String, DocumentSnapshot> ultimaDeCadaGrupo = {};
@@ -1451,6 +2360,8 @@ class _TelaNavegacaoState extends State<TelaNavegacao> {
               'descricao': dados['descricao'],
               'valor': dados['valor'],
               'responsavel': dados['responsavel'],
+              'familiaId':
+                  widget.familiaLogada, // 👉 ETIQUETA DA FAMÍLIA ADICIONADA!
               'data': Timestamp.fromDate(novaData),
               'isParcelamento': dados['isParcelamento'] ?? false,
               'isCartao': dados['isCartao'] ?? false,
@@ -1488,29 +2399,39 @@ class _TelaNavegacaoState extends State<TelaNavegacao> {
     String diaTopo =
         "${hj.day.toString().padLeft(2, '0')}/${hj.month.toString().padLeft(2, '0')}";
 
+    // 👇 1. ATUALIZAMOS A LISTA DE TELAS
     final List<Widget> telas = [
       TelaVisaoGeralTripla(
           mesAno: _dataSelecionada,
           aoMudarMes: _mudarMes,
-          aoMudarMesEspecifico: _mudarParaMesEspecifico),
-      TelaLancamentos(
+          aoMudarMesEspecifico: _mudarParaMesEspecifico,
+          familiaLogada: widget.familiaLogada),
+      // A nova tela que agrupa o cartão:
+      TelaCartao(
           mesAno: _dataSelecionada,
           aoMudarMes: _mudarMes,
-          usuarioLogado: widget.usuarioLogado),
-      TelaParcelamentos(
-          mesAno: _dataSelecionada,
-          aoMudarMes: _mudarMes,
-          usuarioLogado: widget.usuarioLogado),
+          usuarioLogado: widget.usuarioLogado,
+          familiaLogada: widget.familiaLogada), // 👉 ADICIONADO
+      // A nova tela da Pizza:
+      TelaEstatisticas(
+          familiaLogada:
+              widget.familiaLogada), // 👉 REMOVIDO O "const" E ADICIONADO AQUI!
       TelaPoupanca(
           mesAno: _dataSelecionada,
           aoMudarMes: _mudarMes,
-          usuarioLogado: widget.usuarioLogado),
+          usuarioLogado: widget.usuarioLogado,
+          familiaLogada: widget.familiaLogada), // 👉 ADICIONADO
     ];
+
     return Scaffold(
-      drawer: MenuLateral(usuarioLogado: widget.usuarioLogado),
+      drawer: MenuLateral(
+          usuarioLogado: widget.usuarioLogado,
+          familiaLogada: widget.familiaLogada),
       appBar: AppBar(
-        title: Text(
-            ['Resumo', 'Contas', 'Parcelamentos', 'Poupança'][_indiceAtual]),
+        // 👇 2. ATUALIZAMOS OS TÍTULOS DO TOPO
+        toolbarHeight: 40.0, // 👉 ADICIONE ESTA LINHA AQUI! (O padrão é 56.0)
+        title: const SizedBox
+            .shrink(), // Se quiser o meio vazio, ou apague o title
         centerTitle: true,
         leadingWidth: 80,
         leading: Builder(
@@ -1521,7 +2442,8 @@ class _TelaNavegacaoState extends State<TelaNavegacao> {
                   fit: BoxFit.scaleDown,
                   child: Text('DOUB',
                       style: TextStyle(
-                          fontSize: 20,
+                          fontFamily: 'TabPearl',
+                          fontSize: 15,
                           fontWeight: FontWeight.w900,
                           letterSpacing: 1.2,
                           color: Colors.white)),
@@ -1532,7 +2454,7 @@ class _TelaNavegacaoState extends State<TelaNavegacao> {
                   padding: const EdgeInsets.only(right: 16.0),
                   child: Text(diaTopo,
                       style: const TextStyle(
-                          fontSize: 16,
+                          fontSize: 14,
                           fontWeight: FontWeight.bold,
                           color: Colors.white70))))
         ],
@@ -1540,18 +2462,22 @@ class _TelaNavegacaoState extends State<TelaNavegacao> {
       body: telas[_indiceAtual],
       bottomNavigationBar: BottomNavigationBar(
         type: BottomNavigationBarType.fixed,
+        showSelectedLabels: false, // 👈 ADICIONE ISSO: Esconde o texto verde
+        showUnselectedLabels:
+            false, // 👈 ADICIONE ISSO: Esconde os textos cinzas
         currentIndex: _indiceAtual,
         onTap: (indice) {
           setState(() {
             _indiceAtual = indice;
           });
         },
+        // 👇 3. ATUALIZAMOS OS BOTÕES E ÍCONES DE BAIXO
         items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.dashboard), label: 'Resumo'),
+          BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Resumo'),
           BottomNavigationBarItem(
-              icon: Icon(Icons.account_balance), label: 'Contas'),
+              icon: Icon(Icons.credit_card), label: 'Cartão'),
           BottomNavigationBarItem(
-              icon: Icon(Icons.view_list), label: 'Parcelas'),
+              icon: Icon(Icons.pie_chart), label: 'Estatísticas'),
           BottomNavigationBarItem(icon: Icon(Icons.savings), label: 'Poupança')
         ],
       ),
@@ -1559,66 +2485,42 @@ class _TelaNavegacaoState extends State<TelaNavegacao> {
   }
 }
 
-class TelaVisaoGeralTripla extends StatefulWidget {
+class TelaVisaoGeralTripla extends StatelessWidget {
   final DateTime mesAno;
   final Function(int) aoMudarMes;
   final Function(DateTime) aoMudarMesEspecifico;
-  const TelaVisaoGeralTripla(
-      {super.key,
-      required this.mesAno,
-      required this.aoMudarMes,
-      required this.aoMudarMesEspecifico});
-  @override
-  State<TelaVisaoGeralTripla> createState() => _TelaVisaoGeralTriplaState();
-}
+  final String familiaLogada; // 👉 NOVA LINHA
 
-class _TelaVisaoGeralTriplaState extends State<TelaVisaoGeralTripla>
-    with SingleTickerProviderStateMixin {
-  late TabController _tabController;
-  @override
-  void initState() {
-    super.initState();
-    _tabController = TabController(length: 3, vsync: this);
-  }
-
-  @override
-  void dispose() {
-    _tabController.dispose();
-    super.dispose();
-  }
-
-  void _irParaMes(DateTime data) {
-    widget.aoMudarMesEspecifico(data);
-    _tabController.animateTo(0);
-  }
+  const TelaVisaoGeralTripla({
+    super.key,
+    required this.mesAno,
+    required this.aoMudarMes,
+    required this.aoMudarMesEspecifico,
+    required this.familiaLogada, // 👉 NOVA LINHA
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Column(children: [
-      SeletorMes(dataAtual: widget.mesAno, aoMudar: widget.aoMudarMes),
-      TabBar(
-          controller: _tabController,
-          labelColor: Colors.green,
-          unselectedLabelColor: Colors.grey,
-          indicatorColor: Colors.green,
-          tabs: const [
-            Tab(text: 'Mensal'),
-            Tab(text: 'Diário'),
-            Tab(text: 'Anual')
-          ]),
-      Expanded(
-          child: TabBarView(controller: _tabController, children: [
-        _TabMensal(mesAno: widget.mesAno),
-        _TabDiario(mesAno: widget.mesAno),
-        _TabAnual(ano: widget.mesAno.year, aoClicarMes: _irParaMes),
-      ]))
-    ]);
+    return Column(
+      children: [
+        SeletorMes(dataAtual: mesAno, aoMudar: aoMudarMes),
+        Expanded(
+            child: _TabMensal(
+                mesAno: mesAno,
+                familiaLogada:
+                    familiaLogada)), // 👉 REPASSANDO // Mostra o resumo direto, sem abas!
+      ],
+    );
   }
 }
 
 class _TabMensal extends StatelessWidget {
   final DateTime mesAno;
-  const _TabMensal({required this.mesAno});
+  final String familiaLogada; // 👉 ESSA É A LINHA QUE ESTAVA FALTANDO!
+  const _TabMensal(
+      {required this.mesAno,
+      required this.familiaLogada}); // 👉 CORRIGIDO // 👉 CORRIGIDO
+
   @override
   Widget build(BuildContext context) {
     bool isDark = Theme.of(context).brightness == Brightness.dark;
@@ -1628,32 +2530,39 @@ class _TabMensal extends StatelessWidget {
     return StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance
             .collection('lancamentos')
+            .where('familiaId',
+                isEqualTo: familiaLogada) // 👉 ADICIONE ESTA LINHA!
             .where('data', isGreaterThanOrEqualTo: Timestamp.fromDate(inicio))
             .where('data', isLessThan: Timestamp.fromDate(fim))
             .snapshots(),
         builder: (context, snapshot) {
-          if (!snapshot.hasData)
+          if (!snapshot.hasData) {
             return const Center(child: CircularProgressIndicator());
+          }
+
           double renda = 0, despesa = 0, poup = 0;
 
           for (var doc in snapshot.data!.docs) {
             var d = doc.data() as Map<String, dynamic>;
             double v = (d['valor'] ?? 0.0).toDouble();
-            if (d['isCartao'] == true || d['isParcelamento'] == true) {
-              double vGast = v < 0 ? v * -1 : v;
-              despesa += vGast;
-            } else if (d['isDepositoDireto'] != true) {
-              if (v >= 0)
-                renda += v;
-              else {
-                double abs = v * -1;
-                if (d['isPoupanca'] == true)
-                  poup += abs;
-                else
-                  despesa += abs;
+
+            if (d['isDepositoDireto'] == true) continue;
+
+            if (v >= 0 &&
+                d['isCartao'] != true &&
+                d['isParcelamento'] != true &&
+                d['isPoupanca'] != true) {
+              renda += v;
+            } else {
+              double abs = v < 0 ? v * -1 : v;
+              if (d['isPoupanca'] == true) {
+                poup += abs;
+              } else {
+                despesa += abs;
               }
             }
           }
+
           return ListView(padding: const EdgeInsets.all(16), children: [
             Card(
                 elevation: 6,
@@ -1727,73 +2636,53 @@ class _TabMensal extends StatelessWidget {
                           ])
                     ]))),
             const SizedBox(height: 20),
+            // 👇 BOTÃO ESTILO NUBANK (Fundo escuro com bordinha sutil)
             ElevatedButton.icon(
-                style:
-                    ElevatedButton.styleFrom(backgroundColor: Colors.blueGrey),
-                icon: const Icon(Icons.settings_applications,
-                    color: Colors.white),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor:
+                      const Color(0xFF1A1A1A), // Fundo escuro e limpo
+                  foregroundColor:
+                      const Color(0xffcbc4c4), // Letra e ícone brancos
+                  elevation: 0, // Tira a sombra pra ficar moderno
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                  side: const BorderSide(
+                      color: Colors.white12), // Bordinha cinza luxuosa
+                ),
+                icon: const Icon(Icons.settings_applications, size: 20),
                 label: const Text('Gerenciar Categorias',
-                    style: TextStyle(color: Colors.white)),
-                onPressed: () => _gerenciarCategorias(context))
+                    style: TextStyle(fontWeight: FontWeight.normal)),
+                onPressed: () => _gerenciarCategorias(
+                    context, familiaLogada)) // 👉 PASSANDO A FAMÍLIA AQUI
           ]);
         });
   }
 }
 
-class _TabDiario extends StatefulWidget {
-  final DateTime mesAno;
-  const _TabDiario({required this.mesAno});
-  @override
-  State<_TabDiario> createState() => _TabDiarioState();
-}
+class _TabAnual extends StatelessWidget {
+  final int ano;
+  final String familiaLogada; // 👉 NOVA LINHA
 
-class _TabDiarioState extends State<_TabDiario> {
-  int _semanaSelecionada = _getSemanaDoMes(DateTime.now());
+  const _TabAnual(
+      {super.key,
+      required this.ano,
+      required this.familiaLogada}); // 👉 CORRIGIDO
 
-  static int _getSemanaDoMes(DateTime date) {
-    int day = date.day;
-    int firstWeekday = DateTime(date.year, date.month, 1).weekday;
-    return ((day + firstWeekday - 2) / 7).floor() + 1;
-  }
-
-  DateTime _parseDataReal(String dateStr) {
-    try {
-      List<String> parts = dateStr.split('/');
-      return DateTime(
-          int.parse(parts[2]), int.parse(parts[1]), int.parse(parts[0]));
-    } catch (e) {
-      return DateTime.now();
-    }
-  }
-
-  void _mostrarDetalhesDia(
-      BuildContext context,
-      String diaNome,
-      List<Map<String, dynamic>> lancamentos,
-      Map<String, String> nomesCategorias) {
-    if (lancamentos.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Nenhum gasto neste dia.')));
-      return;
-    }
-
-    Map<String, List<Map<String, dynamic>>> agrupadoPorCat = {};
-    for (var l in lancamentos) {
-      var cats = l['categorias'] ?? [];
-      String catNome = "OUTROS";
-      if (cats.isNotEmpty && nomesCategorias.containsKey(cats[0].toString())) {
-        catNome = nomesCategorias[cats[0].toString()]!.toUpperCase();
-      }
-      agrupadoPorCat.putIfAbsent(catNome, () => []).add(l);
-    }
+  // 👇 A janelinha que sobe quando aperta em "Outros Gastos"
+  void _mostrarDetalhesFatia(BuildContext ctx, Map<String, dynamic> fatia) {
+    Map<String, double> detalhes = fatia['detalhes'] ?? {};
+    List<MapEntry<String, double>> listaDetalhes = detalhes.entries.toList();
+    listaDetalhes.sort((a, b) =>
+        b.value.compareTo(a.value)); // Ordena do maior gasto pro menor
 
     showModalBottomSheet(
-      context: context,
+      context: ctx,
       isScrollControlled: true,
-      backgroundColor: Theme.of(context).cardColor,
+      backgroundColor: Theme.of(ctx).cardColor,
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (ctx) => Padding(
+      builder: (context) => Padding(
         padding: const EdgeInsets.all(20),
         child: ConstrainedBox(
           constraints: BoxConstraints(
@@ -1802,45 +2691,45 @@ class _TabDiarioState extends State<_TabDiario> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Detalhes de $diaNome',
-                  style: const TextStyle(
-                      fontSize: 20, fontWeight: FontWeight.bold)),
-              const Divider(height: 25),
-              Expanded(
-                child: ListView(
-                  shrinkWrap: true,
-                  children: agrupadoPorCat.entries.map((entry) {
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 10.0),
-                          child: Text(entry.key,
-                              style: const TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w900,
-                                  color: Colors.green)),
-                        ),
-                        ...entry.value.map((d) {
-                          double val = (d['valor'] ?? 0.0).toDouble();
-                          if (val < 0) val = val * -1;
-                          return ListTile(
-                              dense: true,
-                              title: Text(d['descricao'] ?? 'Sem nome',
-                                  style: const TextStyle(fontSize: 15)),
-                              trailing: Text(
-                                  'R\$ ${val.toStringAsFixed(2).replaceAll('.', ',')}',
-                                  style: const TextStyle(
-                                      color: Colors.red,
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 15)));
-                        }),
-                        const Divider(thickness: 0.5),
-                      ],
-                    );
-                  }).toList(),
-                ),
+              Row(
+                children: [
+                  Container(
+                      width: 14,
+                      height: 14,
+                      decoration: BoxDecoration(
+                          color: fatia['cor'], shape: BoxShape.circle)),
+                  const SizedBox(width: 10),
+                  Flexible(
+                      child: Text('Resumo de ${fatia['nome']}',
+                          style: const TextStyle(
+                              fontSize: 18, fontWeight: FontWeight.bold))),
+                ],
               ),
+              const Divider(height: 25),
+              if (listaDetalhes.isEmpty)
+                const Text('Nenhum detalhe encontrado.',
+                    style: TextStyle(color: Colors.grey))
+              else
+                Expanded(
+                  child: ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: listaDetalhes.length,
+                      itemBuilder: (c, i) {
+                        var item = listaDetalhes[i];
+                        return ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          dense: true,
+                          title: Text(item.key,
+                              style: const TextStyle(fontSize: 15)),
+                          trailing: Text(
+                              'R\$ ${item.value.toStringAsFixed(2).replaceAll('.', ',')}',
+                              style: TextStyle(
+                                  color: fatia['cor'],
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 15)),
+                        );
+                      }),
+                )
             ],
           ),
         ),
@@ -1848,298 +2737,305 @@ class _TabDiarioState extends State<_TabDiario> {
     );
   }
 
-  Map<int, DateTime> _obterDiasDaSemana(int ano, int mes, int semanaAlvo) {
-    Map<int, DateTime> diasDaSemana = {};
-    for (int d = 1; d <= 31; d++) {
-      DateTime dt = DateTime(ano, mes, d);
-      if (dt.month != mes) break;
-      if (_getSemanaDoMes(dt) == semanaAlvo) {
-        diasDaSemana[dt.weekday] = dt;
-      }
-    }
-    return diasDaSemana;
-  }
-
   @override
   Widget build(BuildContext context) {
-    DateTime inicio = DateTime(widget.mesAno.year, widget.mesAno.month, 1);
-    DateTime fim = DateTime(widget.mesAno.year, widget.mesAno.month + 1, 1);
+    DateTime inicioAno = DateTime(ano, 1, 1);
+    DateTime fimAno = DateTime(ano + 1, 1, 1);
 
-    return FutureBuilder<QuerySnapshot>(
-        future: FirebaseFirestore.instance.collection('categorias').get(),
-        builder: (context, snapCats) {
-          if (!snapCats.hasData)
-            return const Center(child: CircularProgressIndicator());
-
-          Map<String, Color> coresCategorias = {};
-          Map<String, String> nomesCategorias = {};
-          for (var doc in snapCats.data!.docs) {
-            var d = doc.data() as Map<String, dynamic>;
-            coresCategorias[doc.id] = Color(d['cor'] ?? Colors.white.value);
-            nomesCategorias[doc.id] = d['nome'] ?? 'Outros';
-          }
-
-          return StreamBuilder<QuerySnapshot>(
-              stream: FirebaseFirestore.instance
-                  .collection('lancamentos')
-                  .where('data',
-                      isGreaterThanOrEqualTo: Timestamp.fromDate(inicio))
-                  .where('data', isLessThan: Timestamp.fromDate(fim))
-                  .snapshots(),
-              builder: (context, snapshot) {
-                if (!snapshot.hasData)
-                  return const Center(child: CircularProgressIndicator());
-
-                Map<int, List<Map<String, dynamic>>> dadosDiarios = {
-                  1: [],
-                  2: [],
-                  3: [],
-                  4: [],
-                  5: [],
-                  6: [],
-                  7: []
-                };
-                Map<int, List<Map<String, dynamic>>> detalhesDia = {
-                  1: [],
-                  2: [],
-                  3: [],
-                  4: [],
-                  5: [],
-                  6: [],
-                  7: []
-                };
-                Map<int, DateTime> diasDestaSemana = _obterDiasDaSemana(
-                    widget.mesAno.year,
-                    widget.mesAno.month,
-                    _semanaSelecionada);
-
-                for (var doc in snapshot.data!.docs) {
-                  var d = doc.data() as Map<String, dynamic>;
-                  double v = (d['valor'] ?? 0.0).toDouble();
-
-                  DateTime dt = (d['dataRealString'] != null &&
-                          d['dataRealString'].toString().isNotEmpty)
-                      ? _parseDataReal(d['dataRealString'].toString())
-                      : (d['data'] as Timestamp).toDate();
-
-                  if (_getSemanaDoMes(dt) != _semanaSelecionada ||
-                      dt.month != widget.mesAno.month) continue;
-
-                  if (v >= 0 ||
-                      d['isPoupanca'] == true ||
-                      d['isDepositoDireto'] == true ||
-                      d['isCartao'] == true ||
-                      d['isParcelamento'] == true) continue;
-
-                  double abs = v < 0 ? v * -1 : v;
-                  Color cor = Colors.white;
-
-                  var cats = d['categorias'] ?? [];
-                  if (cats.isNotEmpty &&
-                      coresCategorias.containsKey(cats[0].toString())) {
-                    cor = coresCategorias[cats[0].toString()]!;
-                  }
-
-                  String nomeCat = cats.isNotEmpty &&
-                          nomesCategorias.containsKey(cats[0].toString())
-                      ? nomesCategorias[cats[0].toString()]!
-                      : "Outros";
-                  dadosDiarios[dt.weekday]!
-                      .add({'v': abs, 'cor': cor, 'nome': nomeCat});
-                  detalhesDia[dt.weekday]!.add(d);
-                }
-
-                const dias = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'];
-
-                return Column(children: [
-                  Container(
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      color: Theme.of(context).brightness == Brightness.dark
-                          ? const Color(0xFF1A1A1A)
-                          : Colors.green.shade50,
-                      child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            IconButton(
-                                icon: const Icon(Icons.arrow_back_ios,
-                                    size: 16, color: Colors.green),
-                                onPressed: () => setState(() =>
-                                    _semanaSelecionada =
-                                        (_semanaSelecionada > 1)
-                                            ? _semanaSelecionada - 1
-                                            : 1)),
-                            const SizedBox(width: 10),
-                            Text('SEMANA $_semanaSelecionada',
-                                style: const TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.green,
-                                    letterSpacing: 1)),
-                            const SizedBox(width: 10),
-                            IconButton(
-                                icon: const Icon(Icons.arrow_forward_ios,
-                                    size: 16, color: Colors.green),
-                                onPressed: () => setState(() =>
-                                    _semanaSelecionada =
-                                        (_semanaSelecionada < 5)
-                                            ? _semanaSelecionada + 1
-                                            : 5)),
-                          ])),
-                  Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: List.generate(7, (i) {
-                            int diaIdx = i + 1;
-                            Map<Color, double> somaPorCor = {};
-                            for (var s in dadosDiarios[diaIdx]!) {
-                              somaPorCor[s['cor']] =
-                                  (somaPorCor[s['cor']] ?? 0) + s['v'];
-                            }
-                            List<Map<String, dynamic>> segmentosUnificados =
-                                somaPorCor.entries
-                                    .map((e) => {'v': e.value, 'cor': e.key})
-                                    .toList();
-
-                            double totalDia = segmentosUnificados.fold(
-                                0, (sum, item) => sum + (item['v'] as double));
-                            DateTime? dtDia = diasDestaSemana[diaIdx];
-                            String labelData = dtDia != null
-                                ? "${dtDia.day.toString().padLeft(2, '0')}/${dtDia.month.toString().padLeft(2, '0')}"
-                                : "";
-
-                            return Expanded(
-                              child: GestureDetector(
-                                onTap: () => _mostrarDetalhesDia(
-                                    context,
-                                    '${dias[i]} ($labelData)',
-                                    detalhesDia[diaIdx]!,
-                                    nomesCategorias),
-                                child: Column(
-                                    mainAxisAlignment: MainAxisAlignment.end,
-                                    children: [
-                                      Text(
-                                          totalDia > 0
-                                              ? totalDia.toStringAsFixed(0)
-                                              : '',
-                                          style: const TextStyle(
-                                              fontSize: 14,
-                                              fontWeight: FontWeight.bold)),
-                                      const SizedBox(height: 8),
-                                      Expanded(
-                                        child: SizedBox(
-                                          width: 32,
-                                          child: Column(
-                                            mainAxisAlignment:
-                                                MainAxisAlignment.end,
-                                            children:
-                                                segmentosUnificados.map((seg) {
-                                              double alturaSeg = (seg['v'] /
-                                                      (totalDia > 0
-                                                          ? totalDia
-                                                          : 1)) *
-                                                  180;
-                                              return Container(
-                                                height: alturaSeg < 6
-                                                    ? 6
-                                                    : alturaSeg,
-                                                width: 32,
-                                                margin:
-                                                    const EdgeInsets.symmetric(
-                                                        vertical: 1),
-                                                decoration: BoxDecoration(
-                                                    color: seg['cor'],
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                            3)),
-                                              );
-                                            }).toList(),
-                                          ),
-                                        ),
-                                      ),
-                                      const SizedBox(height: 12),
-                                      Text(dias[i],
-                                          style: const TextStyle(
-                                              fontWeight: FontWeight.bold,
-                                              fontSize: 13)),
-                                      Text(labelData,
-                                          style: const TextStyle(
-                                              fontSize: 11,
-                                              color: Colors.grey,
-                                              fontWeight: FontWeight.w600))
-                                    ]),
-                              ),
-                            );
-                          })),
-                    ),
-                  ),
-                ]);
-              });
-        });
-  }
-}
-
-class _TabAnual extends StatelessWidget {
-  final int ano;
-  final Function(DateTime) aoClicarMes;
-  const _TabAnual({required this.ano, required this.aoClicarMes});
-  @override
-  Widget build(BuildContext context) {
-    DateTime inicio = DateTime(ano, 1, 1);
-    DateTime fim = DateTime(ano + 1, 1, 1);
+    // 👇 RETORNA O STREAMBUILDER DIRETO (É isso que estava causando o erro de Null!)
     return StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance
             .collection('lancamentos')
-            .where('data', isGreaterThanOrEqualTo: Timestamp.fromDate(inicio))
-            .where('data', isLessThan: Timestamp.fromDate(fim))
+            .where('familiaId',
+                isEqualTo: familiaLogada) // 🛡️ FILTRO BLINDADO!
+            .where('data',
+                isGreaterThanOrEqualTo: Timestamp.fromDate(inicioAno))
+            .where('data', isLessThan: Timestamp.fromDate(fimAno))
             .snapshots(),
         builder: (context, snapshot) {
-          if (!snapshot.hasData)
+          if (!snapshot.hasData) {
             return const Center(child: CircularProgressIndicator());
-          double totalAno = 0;
-          Map<int, double> saldoMes = {};
-          for (int i = 1; i <= 12; i++) saldoMes[i] = 0;
+          }
+
+          DateTime hoje = DateTime.now();
+          int mesLimite = 12;
+
+          if (ano == hoje.year) {
+            mesLimite = hoje.day >= 1 ? hoje.month : hoje.month - 1;
+          } else if (ano > hoje.year) {
+            mesLimite = 0;
+          }
+
+          Map<String, Map<String, dynamic>> totaisCategorias = {};
+          Map<int, Map<String, double>> mesesGrafico = {};
+
+          for (int i = 1; i <= 12; i++) {
+            mesesGrafico[i] = {};
+          }
+
           for (var doc in snapshot.data!.docs) {
             var d = doc.data() as Map<String, dynamic>;
-            DateTime dt = (d['data'] as Timestamp).toDate();
-            if (d['isPoupanca'] != true && d['isDepositoDireto'] != true) {
-              double v = (d['valor'] ?? 0.0).toDouble();
-              if ((d['isCartao'] == true || d['isParcelamento'] == true) &&
-                  v > 0) v = v * -1;
-              saldoMes[dt.month] = saldoMes[dt.month]! + v;
-              totalAno += v;
+            DateTime dataLanc = (d['data'] as Timestamp).toDate();
+            int mes = dataLanc.month;
+
+            if (mes > mesLimite) continue;
+
+            double v = (d['valor'] ?? 0.0).toDouble();
+
+            if (d['isDepositoDireto'] == true) continue;
+            if (v >= 0 &&
+                d['isCartao'] != true &&
+                d['isParcelamento'] != true &&
+                d['isPoupanca'] != true) continue;
+
+            double abs = v < 0 ? v * -1 : v;
+
+            String nomeMacro = '';
+            Color corMacro = Colors.grey;
+            String nomeDetalhe = '';
+
+            // 👇 A MÁGICA DA EXPLOSÃO DE CATEGORIAS COMEÇA AQUI!
+            if (d['isPoupanca'] == true) {
+              nomeMacro = 'Poupança';
+              corMacro = Colors.blue;
+              nomeDetalhe = d['descricao'] ?? 'Depósito';
+            } else if (d['isParcelamento'] == true || d['isCartao'] == true) {
+              nomeMacro = 'Parcelamentos';
+              corMacro = const Color(0xff9c27b0);
+              nomeDetalhe = d['descricao'] ?? 'Faturas e Cotas';
+            } else {
+              // ADEUS "OUTROS GASTOS"! Puxamos a categoria real do banco:
+              var cats = d['categorias'] ?? [];
+              String idCat = cats.isNotEmpty ? cats[0].toString() : '';
+
+              var catInfo = cacheCategoriasGeral[idCat];
+              nomeMacro =
+                  catInfo != null ? (catInfo['nome'] ?? 'Outros') : 'Outros';
+              int corValor = catInfo != null
+                  ? (catInfo['cor'] ?? Colors.grey.value)
+                  : Colors.grey.value;
+              corMacro = Color(corValor);
+
+              // O detalhe que aparece no pop-up vira o nome da compra em si
+              nomeDetalhe = d['descricao'] ?? 'Gasto Avulso';
             }
+
+            var catData = totaisCategorias[nomeMacro] ??
+                {
+                  'valor': 0.0,
+                  'cor': corMacro,
+                  'nome': nomeMacro,
+                  'detalhes': <String, double>{}
+                };
+
+            catData['valor'] += abs;
+            Map<String, double> detalhes = catData['detalhes'];
+            detalhes[nomeDetalhe] = (detalhes[nomeDetalhe] ?? 0.0) + abs;
+
+            totaisCategorias[nomeMacro] = catData;
+            mesesGrafico[mes]![nomeMacro] =
+                (mesesGrafico[mes]![nomeMacro] ?? 0.0) + abs;
           }
-          return ListView(padding: const EdgeInsets.all(16), children: [
-            Text('Balanço Anual $ano',
-                style:
-                    const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 5),
-            Text(
-                'Resultado Geral: R\$ ${totalAno.toStringAsFixed(2).replaceAll('.', ',')}',
-                style: TextStyle(
-                    fontSize: 18,
-                    color: totalAno >= 0 ? Colors.green : Colors.red,
-                    fontWeight: FontWeight.bold)),
-            const Divider(height: 30),
-            ...List.generate(12, (i) {
-              int m = i + 1;
-              return Card(
-                  margin: const EdgeInsets.symmetric(vertical: 4),
-                  child: ListTile(
-                      title: Text(obterNomeMes(m),
-                          style: const TextStyle(fontWeight: FontWeight.bold)),
-                      trailing: Text(
-                          'R\$ ${saldoMes[m]!.toStringAsFixed(2).replaceAll('.', ',')}',
-                          style: TextStyle(
-                              color:
-                                  saldoMes[m]! >= 0 ? Colors.green : Colors.red,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 16)),
-                      onTap: () => aoClicarMes(DateTime(ano, m, 1))));
-            })
-          ]);
+
+          List<Map<String, dynamic>> listaCategorias =
+              totaisCategorias.values.toList();
+          listaCategorias.sort((a, b) => b['valor'].compareTo(a['valor']));
+
+          double maxMesTotal = 0;
+          for (int i = 1; i <= 12; i++) {
+            double t = mesesGrafico[i]!.values.fold(0.0, (a, b) => a + b);
+            if (t > maxMesTotal) maxMesTotal = t;
+          }
+
+          List<String> mesesAbrev = [
+            'Jan',
+            'Fev',
+            'Mar',
+            'Abr',
+            'Mai',
+            'Jun',
+            'Jul',
+            'Ago',
+            'Set',
+            'Out',
+            'Nov',
+            'Dez'
+          ];
+
+          double totalGastoAno =
+              listaCategorias.fold(0.0, (s, item) => s + item['valor']);
+
+          // 👇 1. O SEGREDO DO "HERO SECTION": Lemos a altura do celular!
+          double alturaTela = MediaQuery.of(context).size.height;
+
+          // 👇 2. Damos 55% da tela inteira apenas para o gráfico respirar
+          double alturaGrafico = alturaTela * 0.55;
+
+          return ListView(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            children: [
+              const SizedBox(height: 20),
+
+              // 👇 3. APLICAMOS A ALTURA GIGANTE AQUI!
+              SizedBox(
+                height: alturaGrafico,
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: List.generate(12, (index) {
+                    int mes = index + 1;
+                    double totalMes =
+                        mesesGrafico[mes]!.values.fold(0.0, (a, b) => a + b);
+
+                    // 👇 4. A BARRA CRESCE JUNTO (Descontamos 50px de folga pro texto dos meses)
+                    double maxBarHeight = alturaGrafico - 50.0;
+
+                    Widget barraFinal;
+
+                    // O restante do seu if (totalMes == 0) continua igual aqui pra baixo...
+
+                    if (totalMes == 0 || maxMesTotal == 0) {
+                      barraFinal = Container(
+                          width: 14,
+                          height: 14,
+                          decoration: const BoxDecoration(
+                              color: Colors.white12, shape: BoxShape.circle));
+                    } else {
+                      double alturaBarra =
+                          maxBarHeight * (totalMes / maxMesTotal);
+
+                      var catsNoMes = mesesGrafico[mes]!.keys.toList();
+                      catsNoMes.sort((a, b) => mesesGrafico[mes]![b]!
+                          .compareTo(mesesGrafico[mes]![a]!));
+
+                      List<Color> coresGradiente = [];
+                      List<double> paradasGradiente = [];
+                      double alturaAcumulada = 0;
+
+                      for (var c in catsNoMes) {
+                        double valor = mesesGrafico[mes]![c]!;
+                        if (valor <= 0) continue;
+
+                        double inicio =
+                            (alturaAcumulada / totalMes).clamp(0.0, 1.0);
+                        alturaAcumulada += valor;
+                        double fim =
+                            (alturaAcumulada / totalMes).clamp(0.0, 1.0);
+
+                        Color corCat = totaisCategorias[c]!['cor'];
+
+                        coresGradiente.add(corCat);
+                        paradasGradiente.add(inicio);
+                        coresGradiente.add(corCat);
+                        paradasGradiente.add(fim);
+                      }
+
+                      barraFinal = Container(
+                        width: 16,
+                        height: maxBarHeight,
+                        alignment: Alignment.bottomCenter,
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: Container(
+                            width: 16,
+                            height: alturaBarra,
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.bottomCenter,
+                                end: Alignment.topCenter,
+                                colors: coresGradiente,
+                                stops: paradasGradiente,
+                              ),
+                            ),
+                          ),
+                        ),
+                      );
+                    }
+
+                    return Column(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        barraFinal,
+                        const SizedBox(height: 14),
+                        Text(mesesAbrev[index],
+                            style: const TextStyle(
+                              fontSize: 14,
+                              color: Color(0xffdedcdc),
+                            )),
+                      ],
+                    );
+                  }),
+                ),
+              ),
+              const SizedBox(height: 35),
+              const SizedBox(height: 5),
+              const Divider(color: Colors.white10),
+              const SizedBox(height: 5),
+
+              // 👇 LISTA EXPLODIDA COM AS CORES E NOMES REAIS
+              ...listaCategorias.map((f) {
+                double percentual = totalGastoAno > 0
+                    ? (f['valor'] / totalGastoAno) * 100
+                    : 0.0;
+                return InkWell(
+                  onTap: () => _mostrarDetalhesFatia(context, f),
+                  borderRadius: BorderRadius.circular(8),
+                  child: Padding(
+                    padding:
+                        const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
+                    child: Row(
+                      children: [
+                        Container(
+                            width: 4,
+                            height: 24,
+                            decoration: BoxDecoration(
+                                color: f['cor'],
+                                borderRadius: BorderRadius.circular(2))),
+                        const SizedBox(width: 16),
+                        Text(f['nome'],
+                            style: const TextStyle(
+                                fontSize: 15, color: Colors.white)),
+                        Text('   ( ${percentual.toStringAsFixed(1)}% )',
+                            style: const TextStyle(
+                                fontSize: 14, color: Color(0xfff4bdbd))),
+                        const Spacer(),
+                        Text(
+                            'R\$ ${f['valor'].toStringAsFixed(2).replaceAll('.', ',')}',
+                            style: const TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white))
+                      ],
+                    ),
+                  ),
+                );
+              }),
+
+              // 👇 NOVIDADE: A LINHA DO TOTALIZADOR DO ANO!
+              const Divider(color: Colors.white24, height: 30),
+              Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('Total Gasto no Ano',
+                        style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold)),
+                    Text(
+                        'R\$ ${listaCategorias.fold(0.0, (s, item) => s + item['valor']).toStringAsFixed(2).replaceAll('.', ',')}',
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold)),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 20),
+            ],
+          );
         });
   }
 }
@@ -2148,12 +3044,14 @@ class TelaLancamentos extends StatelessWidget {
   final DateTime mesAno;
   final Function(int) aoMudarMes;
   final String usuarioLogado;
+  final String familiaLogada; // 👉 NOVA LINHA AQUI!
 
   const TelaLancamentos(
       {super.key,
       required this.mesAno,
       required this.aoMudarMes,
-      required this.usuarioLogado});
+      required this.usuarioLogado,
+      required this.familiaLogada}); // 👉 NOVA LINHA AQUI!
 
   void _abrirFormulario(BuildContext context) {
     final TextEditingController descricaoController = TextEditingController();
@@ -2263,7 +3161,9 @@ class TelaLancamentos extends StatelessWidget {
                               dataInicial = DateTime(int.parse(parts[2]),
                                   int.parse(parts[1]), int.parse(parts[0]));
                             }
-                          } catch (e) {}
+                          } catch (e) {
+                            debugPrint("Erro: $e");
+                          }
 
                           DateTime? dataSelecionada = await showDatePicker(
                             context: context,
@@ -2287,6 +3187,8 @@ class TelaLancamentos extends StatelessWidget {
                                 color: Colors.green))),
                     if (isDespesa)
                       CategoriaSelector(
+                          familiaLogada:
+                              familiaLogada, // 👉 SÓ ADICIONAR ESSA LINHA NAS 4 VEZES!
                           selecionadas: catsSel,
                           onChanged: (l) =>
                               setStateBottomSheet(() => catsSel = l)),
@@ -2299,7 +3201,7 @@ class TelaLancamentos extends StatelessWidget {
                           subtitle:
                               const Text('Isso aparecerá na Aba do Cofrinho'),
                           value: isPoupanca,
-                          activeColor: Colors.blue,
+                          activeThumbColor: Colors.blue,
                           secondary:
                               const Icon(Icons.savings, color: Colors.blue),
                           onChanged: (bool valor) {
@@ -2316,7 +3218,7 @@ class TelaLancamentos extends StatelessWidget {
                         title: const Text('Conta Fixa?'),
                         subtitle: const Text('Repete automaticamente'),
                         value: isRecorrente,
-                        activeColor: Colors.green,
+                        activeThumbColor: Colors.green,
                         onChanged: (bool valor) {
                           setStateBottomSheet(() {
                             isRecorrente = valor;
@@ -2336,10 +3238,11 @@ class TelaLancamentos extends StatelessWidget {
                                   valorController.text.isNotEmpty) {
                                 double vDigitado =
                                     parseMoeda(valorController.text);
-                                if (isDespesa && vDigitado > 0)
+                                if (isDespesa && vDigitado > 0) {
                                   vDigitado = vDigitado * -1;
-                                else if (!isDespesa && vDigitado < 0)
+                                } else if (!isDespesa && vDigitado < 0) {
                                   vDigitado = vDigitado * -1;
+                                }
                                 DateTime agora = DateTime.now();
                                 int vezes = isRecorrente ? 12 : 1;
                                 String? gId = isRecorrente
@@ -2352,6 +3255,8 @@ class TelaLancamentos extends StatelessWidget {
                                         'descricao': descricaoController.text,
                                         'valor': vDigitado,
                                         'responsavel': usuarioLogado,
+                                        'familiaId':
+                                            familiaLogada, // 👉 ADICIONADO E CORRIGIDO
                                         'dataRealString':
                                             dataRealController.text,
                                         'data': Timestamp.fromDate(DateTime(
@@ -2504,7 +3409,9 @@ class TelaLancamentos extends StatelessWidget {
                               dataInicial = DateTime(int.parse(parts[2]),
                                   int.parse(parts[1]), int.parse(parts[0]));
                             }
-                          } catch (e) {}
+                          } catch (e) {
+                            debugPrint("Erro: $e");
+                          }
 
                           DateTime? dataSelecionada = await showDatePicker(
                             context: context,
@@ -2528,6 +3435,8 @@ class TelaLancamentos extends StatelessWidget {
                                 color: Colors.green))),
                     if (isDespesa)
                       CategoriaSelector(
+                          familiaLogada:
+                              familiaLogada, // 👉 SÓ ADICIONAR ESSA LINHA NAS 4 VEZES!
                           selecionadas: catsSel,
                           onChanged: (l) =>
                               setStateBottomSheet(() => catsSel = l)),
@@ -2538,7 +3447,7 @@ class TelaLancamentos extends StatelessWidget {
                                   color: Colors.blue,
                                   fontWeight: FontWeight.bold)),
                           value: isPoupanca,
-                          activeColor: Colors.blue,
+                          activeThumbColor: Colors.blue,
                           secondary:
                               const Icon(Icons.savings, color: Colors.blue),
                           onChanged: (bool valor) {
@@ -2566,10 +3475,11 @@ class TelaLancamentos extends StatelessWidget {
                                   valorController.text.isNotEmpty) {
                                 double valorDigitado =
                                     parseMoeda(valorController.text);
-                                if (isDespesa && valorDigitado > 0)
+                                if (isDespesa && valorDigitado > 0) {
                                   valorDigitado = valorDigitado * -1;
-                                else if (!isDespesa && valorDigitado < 0)
+                                } else if (!isDespesa && valorDigitado < 0) {
                                   valorDigitado = valorDigitado * -1;
+                                }
 
                                 if (!temGrupo) {
                                   await doc.reference.update({
@@ -2579,6 +3489,7 @@ class TelaLancamentos extends StatelessWidget {
                                     'isPoupanca': isPoupanca,
                                     'categorias': catsSel
                                   });
+                                  // ignore: use_build_context_synchronously
                                   Navigator.pop(context);
                                 } else {
                                   showDialog(
@@ -2625,6 +3536,7 @@ class TelaLancamentos extends StatelessWidget {
                                         'isPoupanca': isPoupanca,
                                         'categorias': catsSel
                                       });
+                                      // ignore: use_build_context_synchronously
                                       Navigator.pop(context);
                                     } else if (acao == 'futuros') {
                                       DateTime dataDeCorte =
@@ -2634,6 +3546,9 @@ class TelaLancamentos extends StatelessWidget {
                                           .collection('lancamentos')
                                           .where('grupoId',
                                               isEqualTo: dados['grupoId'])
+                                          .where('familiaId',
+                                              isEqualTo:
+                                                  familiaLogada) // 👉 A CHAVE MÁGICA QUE FALTAVA!
                                           .get();
                                       var batch =
                                           FirebaseFirestore.instance.batch();
@@ -2657,6 +3572,7 @@ class TelaLancamentos extends StatelessWidget {
                                         }
                                       }
                                       await batch.commit();
+                                      // ignore: use_build_context_synchronously
                                       Navigator.pop(context);
                                     }
                                   });
@@ -2685,43 +3601,67 @@ class TelaLancamentos extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // 👇 1. ADICIONAMOS AS DATAS DE INÍCIO E FIM DO MÊS
+    DateTime inicio = DateTime(mesAno.year, mesAno.month, 1);
+    DateTime fim = DateTime(mesAno.year, mesAno.month + 1, 1);
+
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: Column(
         children: [
-          SeletorMes(dataAtual: mesAno, aoMudar: aoMudarMes),
+          SeletorMes(
+            dataAtual: mesAno,
+            aoMudar: aoMudarMes,
+            travarFuturo: false,
+          ),
           Expanded(
               child: StreamBuilder<QuerySnapshot>(
             stream: FirebaseFirestore.instance
                 .collection('lancamentos')
-                .orderBy('data', descending: true)
-                .snapshots(),
+                .where('familiaId', isEqualTo: familiaLogada)
+                .where('data',
+                    isGreaterThanOrEqualTo: Timestamp.fromDate(
+                        inicio)) // 👉 O MESMO FILTRO DO GRÁFICO!
+                .where('data', isLessThan: Timestamp.fromDate(fim))
+                .snapshots(), // ❌ RETIRAMOS O orderBy DAQUI!
             builder: (context, snapshotLanc) {
-              if (snapshotLanc.connectionState == ConnectionState.waiting)
+              // 👇 2. O DETETIVE: SE TIVER ERRO NO BANCO, ELE VAI MOSTRAR NA TELA!
+              if (snapshotLanc.hasError) {
+                return Center(
+                    child: Text("Erro do Firebase: ${snapshotLanc.error}",
+                        style: const TextStyle(color: Colors.red)));
+              }
+
+              if (snapshotLanc.connectionState == ConnectionState.waiting) {
                 return const Center(
                     child: CircularProgressIndicator(color: Colors.green));
+              }
 
               List<DocumentSnapshot> rendas = [];
               List<DocumentSnapshot> despesas = [];
 
               if (snapshotLanc.hasData) {
-                for (var doc in snapshotLanc.data!.docs) {
+                // 👇 3. ORDENAMOS DIRETO NA MEMÓRIA DO CELULAR (MUITO MAIS RÁPIDO)
+                var docsOrdenados = snapshotLanc.data!.docs.toList();
+                docsOrdenados.sort((a, b) => (b.data() as Map)['data']
+                    .compareTo((a.data() as Map)['data']));
+
+                for (var doc in docsOrdenados) {
                   final dados = doc.data() as Map<String, dynamic>;
                   if (dados['data'] == null) continue;
-                  final dataDoBanco = (dados['data'] as Timestamp).toDate();
-                  if (dataDoBanco.month == mesAno.month &&
-                      dataDoBanco.year == mesAno.year) {
-                    if (dados['isCartao'] == true ||
-                        dados['isParcelamento'] == true) {
-                      continue;
+
+                  // ❌ RETIRAMOS AQUELE "IF" ANTIGO DO MÊS, POIS O FIREBASE JÁ FILTROU
+
+                  if (dados['isCartao'] == true ||
+                      dados['isParcelamento'] == true) {
+                    continue;
+                  } else {
+                    if (dados['isDepositoDireto'] == true) continue;
+                    double val = (dados['valor'] ?? 0.0).toDouble();
+                    if (val >= 0) {
+                      rendas.add(doc);
                     } else {
-                      if (dados['isDepositoDireto'] == true) continue;
-                      double val = (dados['valor'] ?? 0.0).toDouble();
-                      if (val >= 0) {
-                        rendas.add(doc);
-                      } else {
-                        despesas.add(doc);
-                      }
+                      despesas.add(doc);
                     }
                   }
                 }
@@ -2729,6 +3669,7 @@ class TelaLancamentos extends StatelessWidget {
 
               List<Widget> listaFinal = [];
 
+              // (O restante do código de rendas e despesas continua igualzinho a partir daqui...)
               if (rendas.isNotEmpty) {
                 listaFinal.add(const Padding(
                     padding: EdgeInsets.only(top: 10, left: 16, bottom: 8),
@@ -2812,6 +3753,9 @@ class TelaLancamentos extends StatelessWidget {
                         var query = await FirebaseFirestore.instance
                             .collection('lancamentos')
                             .where('grupoId', isEqualTo: dados['grupoId'])
+                            .where('familiaId',
+                                isEqualTo:
+                                    familiaLogada) // 👉 A CHAVE MÁGICA QUE FALTAVA!
                             .get();
                         var batch = FirebaseFirestore.instance.batch();
                         for (var d in query.docs) {
@@ -2956,6 +3900,9 @@ class TelaLancamentos extends StatelessWidget {
                         var query = await FirebaseFirestore.instance
                             .collection('lancamentos')
                             .where('grupoId', isEqualTo: dados['grupoId'])
+                            .where('familiaId',
+                                isEqualTo:
+                                    familiaLogada) // 👉 A CHAVE MÁGICA QUE FALTAVA!
                             .get();
                         var batch = FirebaseFirestore.instance.batch();
                         for (var d in query.docs) {
@@ -3017,11 +3964,38 @@ class TelaLancamentos extends StatelessWidget {
               }
 
               if (listaFinal.isEmpty) {
-                return const Center(
-                    child: Text('Nenhuma conta ou fatura neste mês.',
-                        style: TextStyle(fontSize: 16)));
+                return RefreshIndicator(
+                  color: Colors.green,
+                  onRefresh: () async {
+                    // Como o Firebase já é em tempo real, damos um respiro visual de 800ms
+                    await Future.delayed(const Duration(milliseconds: 800));
+                  },
+                  child: ListView(
+                    physics:
+                        const AlwaysScrollableScrollPhysics(), // 👉 Permite puxar mesmo se a tela estiver vazia!
+                    children: const [
+                      SizedBox(height: 150),
+                      Center(
+                          child: Text('Nenhuma conta ou fatura neste mês.',
+                              style: TextStyle(fontSize: 16))),
+                    ],
+                  ),
+                );
               }
-              return ListView(children: listaFinal);
+
+              return RefreshIndicator(
+                color: Colors.green,
+                onRefresh: () async {
+                  await Future.delayed(const Duration(milliseconds: 800));
+                },
+                child: ListView(
+                  physics:
+                      const AlwaysScrollableScrollPhysics(), // 👉 Garante o gesto fluido!
+                  padding: const EdgeInsets.only(
+                      bottom: 100), // Mola invisível de 100 pixels no final!
+                  children: listaFinal,
+                ),
+              );
             },
           )),
         ],
@@ -3038,12 +4012,14 @@ class TelaParcelamentos extends StatelessWidget {
   final DateTime mesAno;
   final Function(int) aoMudarMes;
   final String usuarioLogado;
+  final String familiaLogada; // 👉 NOVA LINHA AQUI!
 
   const TelaParcelamentos(
       {super.key,
       required this.mesAno,
       required this.aoMudarMes,
-      required this.usuarioLogado});
+      required this.usuarioLogado,
+      required this.familiaLogada}); // 👉 NOVA LINHA AQUI!
 
   void _abrirFormularioParcelamento(BuildContext context) {
     final TextEditingController desc = TextEditingController();
@@ -3101,7 +4077,7 @@ class TelaParcelamentos extends StatelessWidget {
                   SwitchListTile(
                       title: const Text('O valor já é o da parcela?'),
                       value: isValorParcela,
-                      activeColor: Colors.purple,
+                      activeThumbColor: Colors.purple,
                       contentPadding: EdgeInsets.zero,
                       onChanged: (bool valor) {
                         setS(() {
@@ -3132,6 +4108,8 @@ class TelaParcelamentos extends StatelessWidget {
                   ]),
                   const SizedBox(height: 15),
                   CategoriaSelector(
+                      familiaLogada:
+                          familiaLogada, // 👉 SÓ ADICIONAR ESSA LINHA NAS 4 VEZES!
                       selecionadas: catsSel,
                       onChanged: (l) => setS(() => catsSel = l)),
                   const SizedBox(height: 20),
@@ -3183,6 +4161,8 @@ class TelaParcelamentos extends StatelessWidget {
                                       'isCartao': false,
                                       'parcelaAtual': numP,
                                       'totalParcelas': totP,
+                                      'familiaId':
+                                          familiaLogada, // 👉 ADICIONADO E CORRIGIDO
                                       'categorias': catsSel
                                     }..addAll(
                                         gId != null ? {'grupoId': gId} : {}));
@@ -3256,6 +4236,8 @@ class TelaParcelamentos extends StatelessWidget {
                           prefixIcon: Icon(Icons.attach_money))),
                   const SizedBox(height: 15),
                   CategoriaSelector(
+                      familiaLogada:
+                          familiaLogada, // 👉 SÓ ADICIONAR ESSA LINHA NAS 4 VEZES!
                       selecionadas: catsSel,
                       onChanged: (l) => setS(() => catsSel = l)),
                   const SizedBox(height: 20),
@@ -3277,6 +4259,7 @@ class TelaParcelamentos extends StatelessWidget {
                               'valor': valorDigitado,
                               'categorias': catsSel
                             });
+                            // ignore: use_build_context_synchronously
                             Navigator.pop(ctx);
                           } else {
                             showDialog(
@@ -3312,6 +4295,7 @@ class TelaParcelamentos extends StatelessWidget {
                                   'valor': valorDigitado,
                                   'categorias': catsSel
                                 });
+                                // ignore: use_build_context_synchronously
                                 Navigator.pop(ctx);
                               } else if (acao == 'futuros') {
                                 DateTime dtCorte =
@@ -3320,6 +4304,9 @@ class TelaParcelamentos extends StatelessWidget {
                                     .collection('lancamentos')
                                     .where('grupoId',
                                         isEqualTo: dados['grupoId'])
+                                    .where('familiaId',
+                                        isEqualTo:
+                                            familiaLogada) // 👉 A CHAVE MÁGICA QUE FALTAVA!
                                     .get();
                                 var batch = FirebaseFirestore.instance.batch();
                                 for (var d in query.docs) {
@@ -3336,6 +4323,7 @@ class TelaParcelamentos extends StatelessWidget {
                                   }
                                 }
                                 await batch.commit();
+                                // ignore: use_build_context_synchronously
                                 Navigator.pop(ctx);
                               }
                             });
@@ -3397,6 +4385,9 @@ class TelaParcelamentos extends StatelessWidget {
                         var query = await FirebaseFirestore.instance
                             .collection('lancamentos')
                             .where('grupoId', isEqualTo: dados['grupoId'])
+                            .where('familiaId',
+                                isEqualTo:
+                                    familiaLogada) // 👉 A CHAVE MÁGICA QUE FALTAVA!
                             .get();
                         var batch = FirebaseFirestore.instance.batch();
 
@@ -3426,7 +4417,7 @@ class TelaParcelamentos extends StatelessWidget {
                               DateTime(hj.year, hj.month, hj.day, hj.hour))
                         });
                       }
-
+                      // ignore: use_build_context_synchronously
                       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
                           content: Text(
                               'Parcela adiantada! Total de parcelas ajustado.')));
@@ -3491,6 +4482,9 @@ class TelaParcelamentos extends StatelessWidget {
                           var query = await FirebaseFirestore.instance
                               .collection('lancamentos')
                               .where('grupoId', isEqualTo: dados['grupoId'])
+                              .where('familiaId',
+                                  isEqualTo:
+                                      familiaLogada) // 👉 A CHAVE MÁGICA QUE FALTAVA!
                               .get();
                           var batch = FirebaseFirestore.instance.batch();
                           for (var d in query.docs) {
@@ -3549,11 +4543,17 @@ class TelaParcelamentos extends StatelessWidget {
       backgroundColor: Colors.transparent,
       body: Column(
         children: [
-          SeletorMes(dataAtual: mesAno, aoMudar: aoMudarMes),
+          SeletorMes(
+            dataAtual: mesAno,
+            aoMudar: aoMudarMes,
+            travarFuturo: false,
+          ),
           Expanded(
             child: StreamBuilder<QuerySnapshot>(
               stream: FirebaseFirestore.instance
                   .collection('lancamentos')
+                  .where('familiaId',
+                      isEqualTo: familiaLogada) // 👉 ADICIONE ESTA LINHA!
                   .where('data',
                       isGreaterThanOrEqualTo: Timestamp.fromDate(inicio))
                   .where('data', isLessThan: Timestamp.fromDate(fim))
@@ -3595,6 +4595,9 @@ class TelaParcelamentos extends StatelessWidget {
                                 child: Text('Nenhuma parcela neste mês.',
                                     style: TextStyle(fontSize: 16)))
                             : ListView.builder(
+                                padding: const EdgeInsets.only(
+                                    bottom:
+                                        100), // 👈 Adiciona essa linha aqui!
                                 itemCount: parcelamentos.length,
                                 itemBuilder: (c, index) {
                                   final doc = parcelamentos[index];
@@ -3649,12 +4652,14 @@ class TelaPoupanca extends StatelessWidget {
   final DateTime mesAno;
   final Function(int) aoMudarMes;
   final String usuarioLogado;
+  final String familiaLogada; // 👉 NOVA LINHA AQUI!
 
   const TelaPoupanca(
       {super.key,
       required this.mesAno,
       required this.aoMudarMes,
-      required this.usuarioLogado});
+      required this.usuarioLogado,
+      required this.familiaLogada}); // 👉 NOVA LINHA AQUI!
 
   void _abrirFormularioDepositoDireto(BuildContext context) {
     final TextEditingController descCtrl =
@@ -3727,6 +4732,8 @@ class TelaPoupanca extends StatelessWidget {
                               'isCartao': false,
                               'isPoupanca': true,
                               'poupancaConfirmada': true,
+                              'familiaId':
+                                  familiaLogada, // 👉 ADICIONADO E CORRIGIDO
                               'isDepositoDireto': true
                             });
                             Navigator.pop(ctx);
@@ -3748,17 +4755,24 @@ class TelaPoupanca extends StatelessWidget {
         backgroundColor: Colors.transparent,
         body: Column(
           children: [
-            SeletorMes(dataAtual: mesAno, aoMudar: aoMudarMes),
+            SeletorMes(
+              dataAtual: mesAno,
+              aoMudar: aoMudarMes,
+              travarFuturo: false,
+            ),
             Expanded(
               child: StreamBuilder<QuerySnapshot>(
                   stream: FirebaseFirestore.instance
                       .collection('lancamentos')
+                      .where('familiaId',
+                          isEqualTo: familiaLogada) // 👉 ADICIONE ESTA LINHA!
                       .where('isPoupanca', isEqualTo: true)
                       .snapshots(),
                   builder: (context, snapshot) {
-                    if (snapshot.connectionState == ConnectionState.waiting)
+                    if (snapshot.connectionState == ConnectionState.waiting) {
                       return const Center(
                           child: CircularProgressIndicator(color: Colors.blue));
+                    }
                     double totalConfirmadoSempre = 0.0;
                     List<DocumentSnapshot> poupancasDoMes = [];
                     if (snapshot.hasData) {
@@ -3787,20 +4801,15 @@ class TelaPoupanca extends StatelessWidget {
                             padding: const EdgeInsets.all(20),
                             margin: const EdgeInsets.all(16),
                             decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                    colors: [
-                                      Colors.blue.shade400,
-                                      Colors.blue.shade800
-                                    ],
-                                    begin: Alignment.topLeft,
-                                    end: Alignment.bottomRight),
-                                borderRadius: BorderRadius.circular(20),
-                                boxShadow: [
-                                  BoxShadow(
-                                      color: Colors.blue.shade200,
-                                      blurRadius: 10,
-                                      offset: const Offset(0, 5))
-                                ]),
+                              gradient: const LinearGradient(
+                                  colors: [
+                                    Color(0xff383636),
+                                    Color(0xff6d6d56)
+                                  ],
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight),
+                              borderRadius: BorderRadius.circular(20),
+                            ),
                             child: Column(children: [
                               const Icon(Icons.savings,
                                   color: Colors.white, size: 50),
@@ -3924,8 +4933,10 @@ class TelaPoupanca extends StatelessWidget {
                                                                     .red)))
                                                   ]);
                                             });
-                                        if (acao == null || acao == 'cancelar')
+                                        if (acao == null ||
+                                            acao == 'cancelar') {
                                           return false;
+                                        }
                                         if (acao == 'este') {
                                           await doc.reference.delete();
                                         } else if (acao == 'futuros') {
@@ -3937,6 +4948,9 @@ class TelaPoupanca extends StatelessWidget {
                                               .collection('lancamentos')
                                               .where('grupoId',
                                                   isEqualTo: dados['grupoId'])
+                                              .where('familiaId',
+                                                  isEqualTo:
+                                                      familiaLogada) // 👉 A CHAVE MÁGICA QUE FALTAVA!
                                               .get();
                                           var batch = FirebaseFirestore.instance
                                               .batch();
@@ -4053,40 +5067,6 @@ class TelaPoupanca extends StatelessWidget {
   }
 }
 
-class AppTextField extends StatelessWidget {
-  final TextEditingController controller;
-  final String labelText;
-  final IconData? prefixIcon;
-  final bool enabled;
-  final TextInputType? keyboardType;
-  final String? helperText;
-
-  const AppTextField({
-    super.key,
-    required this.controller,
-    required this.labelText,
-    this.prefixIcon,
-    this.enabled = true,
-    this.keyboardType,
-    this.helperText,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return TextField(
-      controller: controller,
-      enabled: enabled,
-      keyboardType: keyboardType,
-      decoration: InputDecoration(
-        labelText: labelText,
-        helperText: helperText,
-        border: const OutlineInputBorder(),
-        prefixIcon: prefixIcon != null ? Icon(prefixIcon) : null,
-      ),
-    );
-  }
-}
-
 class NewsCardItem extends StatefulWidget {
   final String titulo;
   final String descricao;
@@ -4171,6 +5151,1069 @@ class _NewsCardItemState extends State<NewsCardItem> {
                   ),
                 ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class PainelPizzaInterativa extends StatefulWidget {
+  final List<Map<String, dynamic>> fatias;
+  final double total;
+
+  const PainelPizzaInterativa(
+      {super.key, required this.fatias, required this.total});
+
+  @override
+  State<PainelPizzaInterativa> createState() => _PainelPizzaInterativaState();
+}
+
+class _PainelPizzaInterativaState extends State<PainelPizzaInterativa> {
+  int? _fatiaSelecionada;
+  List<Map<String, dynamic>> _fatiasProntas = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _prepararFatias();
+  }
+
+  @override
+  void didUpdateWidget(covariant PainelPizzaInterativa oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _prepararFatias();
+  }
+
+  void _prepararFatias() {
+    _fatiasProntas = [];
+    for (int i = 0; i < widget.fatias.length; i++) {
+      var f = Map<String, dynamic>.from(widget.fatias[i]);
+      f['indexOriginal'] = i;
+      f['pct'] = (f['valor'] / widget.total) * 100;
+      _fatiasProntas.add(f);
+    }
+    // 👇 A MAGICA: Agora nós ordenamos tudo ANTES do mouse e do pincel lerem!
+    _fatiasProntas.sort((a, b) => b['valor'].compareTo(a['valor']));
+  }
+
+  void _mudarSelecao(int? novoIndex) {
+    if (_fatiaSelecionada != novoIndex) {
+      setState(() {
+        _fatiaSelecionada = novoIndex;
+      });
+    }
+  }
+
+  void _verificarInteracao(Offset localPosition, Size size) {
+    double cx = size.width / 2;
+    double cy = size.height / 2;
+    double dx = localPosition.dx - cx;
+    double dy = localPosition.dy - cy;
+
+    double raioBase = min(cx, cy) * 0.65;
+    double r = sqrt(dx * dx + dy * dy);
+
+    if (r > raioBase * 1.3 || r < raioBase * 0.7) return;
+
+    double touchAngle = atan2(dy, dx);
+    double angleFromTop = touchAngle - (-pi / 2);
+    if (angleFromTop < 0) angleFromTop += 2 * pi;
+
+    double currentAngle = 0;
+    // 👇 O SENSOR CONSERTADO: Lendo a mesma ordem que o desenho!
+    for (int i = 0; i < _fatiasProntas.length; i++) {
+      double sweep = (_fatiasProntas[i]['valor'] / widget.total) * 2 * pi;
+      if (angleFromTop >= currentAngle &&
+          angleFromTop <= currentAngle + sweep) {
+        _mudarSelecao(_fatiasProntas[i]['indexOriginal']);
+        return;
+      }
+      currentAngle += sweep;
+    }
+  }
+
+  void _mostrarDetalhesFatia(BuildContext context, Map<String, dynamic> fatia) {
+    List itens = fatia['itens'] ?? [];
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Theme.of(context).cardColor,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.all(20),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(context).size.height * 0.6),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                      width: 14,
+                      height: 14,
+                      decoration: BoxDecoration(
+                          color: fatia['cor'], shape: BoxShape.circle)),
+                  const SizedBox(width: 10),
+                  Flexible(
+                      child: Text('Gastos com ${fatia['nome']}',
+                          style: const TextStyle(
+                              fontSize: 18, fontWeight: FontWeight.bold))),
+                ],
+              ),
+              const Divider(height: 25),
+              if (itens.isEmpty)
+                const Text('Nenhum detalhe encontrado.',
+                    style: TextStyle(color: Colors.grey))
+              else
+                Expanded(
+                  child: ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: itens.length,
+                      itemBuilder: (c, i) {
+                        var item = itens[i];
+                        double v = (item['valor'] ?? 0.0).toDouble();
+                        if (v < 0) v *= -1;
+                        return ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          dense: true,
+                          title: Text(item['descricao'] ?? 'Sem nome',
+                              style: const TextStyle(fontSize: 15)),
+                          trailing: Text(
+                              'R\$ ${v.toStringAsFixed(2).replaceAll('.', ',')}',
+                              style: TextStyle(
+                                  color: fatia['cor'],
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 15)),
+                        );
+                      }),
+                )
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        SizedBox(
+          height: 250,
+          width: double.infinity,
+          child: LayoutBuilder(builder: (context, constraints) {
+            Size size = Size(constraints.maxWidth, constraints.maxHeight);
+            return MouseRegion(
+              onHover: (e) => _verificarInteracao(e.localPosition, size),
+              child: GestureDetector(
+                onTapDown: (d) => _verificarInteracao(d.localPosition, size),
+                onPanUpdate: (d) => _verificarInteracao(d.localPosition, size),
+                child: CustomPaint(
+                  size: size,
+                  painter: GraficoPizza(
+                      _fatiasProntas, widget.total, _fatiaSelecionada),
+                ),
+              ),
+            );
+          }),
+        ),
+        const SizedBox(height: 20),
+        Column(
+          children: _fatiasProntas.map((f) {
+            bool isHovered = _fatiaSelecionada == f['indexOriginal'];
+            return InkWell(
+              onTap: () => _mostrarDetalhesFatia(context, f),
+              borderRadius: BorderRadius.circular(8),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                padding:
+                    const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
+                decoration: BoxDecoration(
+                    color: isHovered
+                        ? Colors.white.withValues(alpha: 0.05)
+                        : Colors.transparent,
+                    border: const Border(
+                        bottom: BorderSide(color: Colors.white10))),
+                child: Row(
+                  children: [
+                    Container(
+                        width: 4,
+                        height: 24,
+                        decoration: BoxDecoration(
+                            color: f['cor'],
+                            borderRadius: BorderRadius.circular(2))),
+                    const SizedBox(width: 16),
+                    Text(f['nome'],
+                        style: TextStyle(
+                            fontSize: 15,
+                            color: isHovered ? Colors.white : Colors.white70,
+                            fontWeight: isHovered
+                                ? FontWeight.bold
+                                : FontWeight.normal)),
+                    const Spacer(),
+                    Text(
+                        'R\$ ${f['valor'].toStringAsFixed(2).replaceAll('.', ',')}',
+                        style: TextStyle(
+                            fontSize: 15,
+                            fontWeight:
+                                isHovered ? FontWeight.bold : FontWeight.normal,
+                            color: isHovered ? f['cor'] : Colors.white))
+                  ],
+                ),
+              ),
+            );
+          }).toList(),
+        )
+      ],
+    );
+  }
+}
+
+class GraficoPizza extends CustomPainter {
+  final List<Map<String, dynamic>> fatias;
+  final double total;
+  final int? hoveredIndex;
+
+  GraficoPizza(this.fatias, this.total, this.hoveredIndex);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    double startAngle = -pi / 2;
+    double cx = size.width / 2;
+    double cy = size.height / 2;
+
+    double raioBase = min(cx, cy) * 0.65;
+    double espessuraLinha = 12.0; // Espessura fixa para não pular
+
+    for (int i = 0; i < fatias.length; i++) {
+      final sweepAngle = (fatias[i]['valor'] / total) * 2 * pi;
+
+      // Cria o "vão" transparente entre as fatias
+      double gap = sweepAngle > 0.08 ? 0.04 : 0.0;
+      double actualSweep = sweepAngle - gap;
+      if (actualSweep < 0) actualSweep = sweepAngle;
+
+      double midAngle = startAngle + sweepAngle / 2;
+
+      // 👇 REMOVIDA A ELEVAÇÃO! O centro agora é sempre o centro exato.
+      final rect = Rect.fromCircle(center: Offset(cx, cy), radius: raioBase);
+
+      final paint = Paint()
+        ..color = fatias[i]['cor']
+        ..style = PaintingStyle.stroke
+        ..strokeWidth =
+            espessuraLinha; // Sem alterar a grossura ao passar o mouse
+
+      canvas.drawArc(rect, startAngle + gap / 2, actualSweep, false, paint);
+
+      // Desenha a porcentagem externa
+      if (fatias[i]['pct'] >= 2.0) {
+        double textRadius = raioBase + espessuraLinha + 18;
+        Offset textOffset = Offset(
+            cx + cos(midAngle) * textRadius, cy + sin(midAngle) * textRadius);
+
+        TextSpan span = TextSpan(
+            style: const TextStyle(
+                color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold),
+            text: '${fatias[i]['pct'].round()}%');
+        TextPainter tp = TextPainter(
+            text: span,
+            textAlign: TextAlign.center,
+            textDirection: TextDirection.ltr);
+        tp.layout();
+        tp.paint(
+            canvas,
+            Offset(
+                textOffset.dx - tp.width / 2, textOffset.dy - tp.height / 2));
+      }
+
+      startAngle += sweepAngle;
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant GraficoPizza oldDelegate) {
+    // Como a pizza não muda mais fisicamente, ela só redesenha se as fatias mudarem!
+    return oldDelegate.fatias != fatias;
+  }
+}
+
+class TelaCartao extends StatelessWidget {
+  final DateTime mesAno;
+  final Function(int) aoMudarMes;
+  final String usuarioLogado;
+  final String familiaLogada; // 👉 1. AGORA O PAI RECEBE A FAMÍLIA
+
+  const TelaCartao(
+      {super.key,
+      required this.mesAno,
+      required this.aoMudarMes,
+      required this.usuarioLogado,
+      required this.familiaLogada}); // 👉 2. EXIGE A FAMÍLIA NA CRIAÇÃO
+
+  @override
+  Widget build(BuildContext context) {
+    return DefaultTabController(
+      length: 2, // Duas abas superiores
+      child: Column(
+        children: [
+          const TabBar(
+            labelColor: Colors.purple,
+            unselectedLabelColor: Colors.grey,
+            indicatorColor: Colors.purple,
+            tabs: [
+              Tab(text: 'Contas do Mês', icon: Icon(Icons.receipt_long)),
+              Tab(text: 'Parcelamentos', icon: Icon(Icons.shopping_bag)),
+            ],
+          ),
+          Expanded(
+            child: TabBarView(
+              children: [
+                // Reaproveitamos as telas EXATAMENTE como você já programou elas!
+                TelaLancamentos(
+                    mesAno: mesAno,
+                    aoMudarMes: aoMudarMes,
+                    usuarioLogado: usuarioLogado,
+                    familiaLogada: familiaLogada),
+                TelaParcelamentos(
+                    mesAno: mesAno,
+                    aoMudarMes: aoMudarMes,
+                    usuarioLogado: usuarioLogado,
+                    familiaLogada: familiaLogada),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class TelaEstatisticas extends StatefulWidget {
+  final String familiaLogada; // 👉 NOVA LINHA
+  const TelaEstatisticas(
+      {super.key, required this.familiaLogada}); // 👉 CORRIGIDO
+
+  @override
+  State<TelaEstatisticas> createState() => _TelaEstatisticasState();
+}
+
+class _TelaEstatisticasState extends State<TelaEstatisticas>
+    with SingleTickerProviderStateMixin {
+  late TabController _tabController;
+
+  // 🛡️ MEMÓRIAS INDEPENDENTES: Nenhuma mexe na outra e nem afetam o Resumo/Cartão!
+  DateTime _dataMensal = DateTime(DateTime.now().year, DateTime.now().month);
+  int _anoAnual = DateTime.now().year;
+  int _abaAnterior = 0; // Crie essa variável solta lá em cima
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 2, vsync: this);
+    _tabController.addListener(() {
+      // 👇 Só redesenha a tela se ele de fato mudou de aba (0 para 1 ou 1 para 0)
+      if (_tabController.index != _abaAnterior) {
+        setState(() {
+          _abaAnterior = _tabController.index;
+        });
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    bool isAnual = _tabController.index == 1;
+
+    return Column(
+      children: [
+        // 1. O SELETOR INTELIGENTE (Muda de comportamento conforme a aba)
+        SeletorMes(
+          dataAtual: isAnual ? DateTime(_anoAnual, 1, 1) : _dataMensal,
+          aoMudar: (delta) {
+            setState(() {
+              if (isAnual) {
+                _anoAnual += (delta > 0 ? 1 : -1);
+              } else {
+                // Pula de mês com segurança no Flutter
+                _dataMensal =
+                    DateTime(_dataMensal.year, _dataMensal.month + delta, 1);
+              }
+            });
+          },
+          isAnual: isAnual,
+        ),
+
+        // 2. ABAS (Mensal / Balanço Anual)
+        Container(
+          color: Colors.transparent,
+          child: TabBar(
+            controller: _tabController,
+            indicatorColor: const Color(0xFF00E676),
+            labelColor: const Color(0xFF00E676),
+            unselectedLabelColor: Colors.grey,
+            tabs: const [
+              Tab(text: 'Balanço Mensal'),
+              Tab(text: 'Balanço Anual'),
+            ],
+          ),
+        ),
+
+        // 3. CONTEÚDO DAS ABAS COM OS DADOS ISOLADOS
+        Expanded(
+          child: TabBarView(
+            controller: _tabController,
+            children: [
+              _EstatisticasMensal(
+                  mesAno: _dataMensal,
+                  familiaLogada: widget.familiaLogada), // 👉 REPASSANDO
+              _TabAnual(
+                  ano: _anoAnual,
+                  familiaLogada: widget.familiaLogada), // 👉 REPASSANDO
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _EstatisticasMensal extends StatelessWidget {
+  final DateTime mesAno;
+  final String familiaLogada; // 👉 NOVA LINHA
+  const _EstatisticasMensal(
+      {required this.mesAno, required this.familiaLogada}); // 👉 CORRIGIDO
+
+  @override
+  Widget build(BuildContext context) {
+    DateTime inicio = DateTime(mesAno.year, mesAno.month, 1);
+    DateTime fim = DateTime(mesAno.year, mesAno.month + 1, 1);
+
+    // 👇 TAMBÉM RETORNA O STREAMBUILDER DIRETO!
+    return StreamBuilder<QuerySnapshot>(
+        stream: FirebaseFirestore.instance
+            .collection('lancamentos')
+            .where('familiaId',
+                isEqualTo: familiaLogada) // 🛡️ FILTRO BLINDADO!
+            .where('data', isGreaterThanOrEqualTo: Timestamp.fromDate(inicio))
+            .where('data', isLessThan: Timestamp.fromDate(fim))
+            .snapshots(),
+        builder: (context, snapshot) {
+          // 👇 SE ESTIVER CARREGANDO, MOSTRA O ESQUELETO DOS CARDS EM VEZ DA BOLINHA!
+          if (!snapshot.hasData) {
+            return ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                // Esqueleto do Card Principal de Totais
+                Container(
+                  height: 180,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1E1E1E),
+                    borderRadius: BorderRadius.circular(15),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(20),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Container(
+                                width: 90, height: 14, color: Colors.white12),
+                            Container(
+                                width: 70, height: 14, color: Colors.white12),
+                          ],
+                        ),
+                        const SizedBox(height: 20),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Container(
+                                width: 110, height: 14, color: Colors.white12),
+                            Container(
+                                width: 70, height: 14, color: Colors.white12),
+                          ],
+                        ),
+                        const Divider(
+                            height: 30, thickness: 1.5, color: Colors.white10),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Container(
+                                width: 100, height: 16, color: Colors.white12),
+                            Container(
+                                width: 90, height: 28, color: Colors.white12),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                // Esqueleto do Botão de Categorias
+                Container(
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1A1A1A),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.white12),
+                  ),
+                ),
+              ],
+            );
+          }
+
+          double totalSaidas = 0;
+          double renda = 0;
+          Map<String, Map<String, dynamic>> fatiasPizza = {};
+
+          for (var doc in snapshot.data!.docs) {
+            var d = doc.data() as Map<String, dynamic>;
+            double v = (d['valor'] ?? 0.0).toDouble();
+
+            if (d['isDepositoDireto'] == true) continue;
+
+            if (v >= 0 &&
+                d['isCartao'] != true &&
+                d['isParcelamento'] != true &&
+                d['isPoupanca'] != true) {
+              renda += v;
+            } else {
+              double abs = v < 0 ? v * -1 : v;
+
+              if (d['isPoupanca'] == true) {
+                var f = fatiasPizza['Poupança'] ??
+                    {
+                      'valor': 0.0,
+                      'cor': Colors.blue,
+                      'nome': 'Poupança',
+                      'itens': []
+                    };
+                f['valor'] += abs;
+                f['itens'].add(d);
+                fatiasPizza['Poupança'] = f;
+                totalSaidas += abs;
+              } else if (d['isParcelamento'] == true || d['isCartao'] == true) {
+                var f = fatiasPizza['Parcelamentos'] ??
+                    {
+                      'valor': 0.0,
+                      'cor': Colors.purple,
+                      'nome': 'Parcelamentos',
+                      'itens': []
+                    };
+                f['valor'] += abs;
+                f['itens'].add(d);
+                fatiasPizza['Parcelamentos'] = f;
+                totalSaidas += abs;
+              } else {
+                var cats = d['categorias'] ?? [];
+                String idCat = cats.isNotEmpty ? cats[0].toString() : '';
+
+                // 👇 Lendo da nossa variável Global super rápida!
+                var catInfo = cacheCategoriasGeral[idCat];
+                String nomeCat =
+                    catInfo != null ? (catInfo['nome'] ?? 'Outros') : 'Outros';
+                Color corCat = catInfo != null
+                    ? Color(catInfo['cor'] ?? Colors.grey.toARGB32())
+                    : Colors.grey;
+
+                var f = fatiasPizza[nomeCat] ??
+                    {'valor': 0.0, 'cor': corCat, 'nome': nomeCat, 'itens': []};
+                f['valor'] += abs;
+                f['itens'].add(d);
+                fatiasPizza[nomeCat] = f;
+                totalSaidas += abs;
+              }
+            }
+          }
+
+          double sobra = renda - totalSaidas;
+          if (sobra > 0) {
+            fatiasPizza['Sobra do Mês'] = {
+              'valor': sobra,
+              'cor': const Color(0xFF00E676),
+              'nome': 'Sobra do Mês',
+              'itens': [
+                {'descricao': 'Dinheiro livre não gasto', 'valor': sobra}
+              ]
+            };
+          }
+
+          List<Map<String, dynamic>> listaFatias = fatiasPizza.values.toList();
+          double totalPizza = sobra > 0 ? renda : totalSaidas;
+
+          if (totalPizza == 0) {
+            return const Center(
+                child: Text('Nenhum dado neste mês para gerar estatísticas.',
+                    style: TextStyle(color: Colors.grey)));
+          }
+
+          return ListView(padding: const EdgeInsets.all(16), children: [
+            const Text('Gastos e Sobra do mês',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.normal)),
+            const SizedBox(height: 15),
+            PainelPizzaInterativa(fatias: listaFatias, total: totalPizza),
+          ]);
+        });
+  }
+}
+
+bool isNatal() {
+  DateTime hoje = DateTime.now();
+  // Se o mês for 12 (Dezembro), retorna true e liga o Natal! 🎄
+  return hoje.month == 0;
+}
+
+class TelaCadastroFamilia extends StatefulWidget {
+  const TelaCadastroFamilia({super.key});
+
+  @override
+  State<TelaCadastroFamilia> createState() => _TelaCadastroFamiliaState();
+}
+
+class _TelaCadastroFamiliaState extends State<TelaCadastroFamilia> {
+  final _emailCtrl = TextEditingController();
+  final _donoCtrl = TextEditingController();
+  final _familiaCtrl = TextEditingController();
+  final _senhaCtrl = TextEditingController();
+  final _confirmaSenhaCtrl = TextEditingController();
+  bool _mostrarSenha = false;
+
+  void _tentarCadastrar() async {
+    // 1. Validações visuais simples
+    if (_emailCtrl.text.isEmpty ||
+        _donoCtrl.text.isEmpty ||
+        _familiaCtrl.text.isEmpty ||
+        _senhaCtrl.text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Preencha todos os campos!',
+              style: TextStyle(color: Colors.white)),
+          backgroundColor: Colors.red));
+      return;
+    }
+    if (_senhaCtrl.text != _confirmaSenhaCtrl.text) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('As senhas não coincidem!',
+              style: TextStyle(color: Colors.white)),
+          backgroundColor: Colors.red));
+      return;
+    }
+
+    String familiaId = _familiaCtrl.text.trim().toUpperCase();
+
+    try {
+      // 2. Verifica se essa família já existe no banco
+      var docCheck = await FirebaseFirestore.instance
+          .collection('familias')
+          .doc(familiaId)
+          .get();
+      if (docCheck.exists) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Este nome de família já está em uso!',
+                style: TextStyle(color: Colors.white)),
+            backgroundColor: Colors.red));
+        return;
+      }
+
+      // 3. Salva a nova família no Firestore
+      await FirebaseFirestore.instance
+          .collection('familias')
+          .doc(familiaId)
+          .set({
+        'dono': _donoCtrl.text.trim(),
+        'email': _emailCtrl.text.trim(),
+        'senha': _senhaCtrl.text.trim(),
+      });
+
+      // 4. Cria as categorias padrão já atreladas à nova família
+      var dbCats = FirebaseFirestore.instance.collection('categorias');
+      await dbCats.add({
+        'nome': 'Mercado',
+        'icone': Icons.shopping_cart.codePoint,
+        'cor': Colors.green.toARGB32(),
+        'ativo': true,
+        'familiaId': familiaId
+      });
+      await dbCats.add({
+        'nome': 'Combustível',
+        'icone': Icons.local_gas_station.codePoint,
+        'cor': Colors.orange.toARGB32(),
+        'ativo': true,
+        'familiaId': familiaId
+      });
+      await dbCats.add({
+        'nome': 'Lazer',
+        'icone': Icons.movie.codePoint,
+        'cor': Colors.purple.toARGB32(),
+        'ativo': true,
+        'familiaId': familiaId
+      });
+      await dbCats.add({
+        'nome': 'Contas Fixas',
+        'icone': Icons.home.codePoint,
+        'cor': Colors.blue.toARGB32(),
+        'ativo': true,
+        'familiaId': familiaId
+      });
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Família cadastrada com sucesso! Faça seu login.',
+              style: TextStyle(color: Colors.white)),
+          backgroundColor: Colors.green));
+
+      // 5. Volta para a tela de login
+      Navigator.pop(context);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Erro ao cadastrar: $e',
+              style: const TextStyle(color: Colors.white)),
+          backgroundColor: Colors.red));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    bool isDark = Theme.of(context).brightness == Brightness.dark;
+    Color corFundo = isDark ? const Color(0xFF121212) : Colors.green.shade50;
+
+    return Scaffold(
+      backgroundColor: corFundo,
+      appBar: AppBar(
+        toolbarHeight: 30.0, // 👉 ADICIONE ESTA LINHA AQUI! (O padrão é 56.0)
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.green),
+          onPressed: () => Navigator.pop(context),
+        ),
+      ),
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(
+              maxWidth: 500), // Blindado contra o PC esticado!
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 35, vertical: 10),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.maps_home_work_outlined,
+                    size: 60, color: Colors.green),
+                const SizedBox(height: 15),
+                const Text('Nova Família DOUB',
+                    style:
+                        TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 10),
+                const Text('Crie seu cofre e convide os membros da sua casa.',
+                    style: TextStyle(color: Colors.grey),
+                    textAlign: TextAlign.center),
+                const SizedBox(height: 35),
+                TextField(
+                  controller: _emailCtrl,
+                  keyboardType: TextInputType.emailAddress,
+                  decoration: InputDecoration(
+                    labelText: 'E-mail',
+                    filled: true,
+                    fillColor: isDark ? Colors.grey.shade900 : Colors.white,
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide.none),
+                    prefixIcon: const Icon(Icons.email),
+                  ),
+                ),
+                const SizedBox(height: 15),
+                TextField(
+                  controller: _donoCtrl,
+                  textCapitalization: TextCapitalization.words,
+                  decoration: InputDecoration(
+                    labelText: 'Seu Nome',
+                    filled: true,
+                    fillColor: isDark ? Colors.grey.shade900 : Colors.white,
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide.none),
+                    prefixIcon: const Icon(Icons.person),
+                  ),
+                ),
+                const SizedBox(height: 15),
+                TextField(
+                  controller: _familiaCtrl,
+                  textCapitalization: TextCapitalization.characters,
+                  decoration: InputDecoration(
+                    labelText: 'Nome da Família',
+                    filled: true,
+                    fillColor: isDark ? Colors.grey.shade900 : Colors.white,
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide.none),
+                    prefixIcon: const Icon(Icons.group),
+                  ),
+                ),
+                const SizedBox(height: 15),
+                TextField(
+                  controller: _senhaCtrl,
+                  obscureText: !_mostrarSenha,
+                  decoration: InputDecoration(
+                    labelText: 'Senha da Família',
+                    filled: true,
+                    fillColor: isDark ? Colors.grey.shade900 : Colors.white,
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide.none),
+                    prefixIcon: const Icon(Icons.lock),
+                    suffixIcon: IconButton(
+                      icon: Icon(
+                          _mostrarSenha
+                              ? Icons.visibility
+                              : Icons.visibility_off,
+                          color: Colors.grey),
+                      onPressed: () =>
+                          setState(() => _mostrarSenha = !_mostrarSenha),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 15),
+                TextField(
+                  controller: _confirmaSenhaCtrl,
+                  obscureText: !_mostrarSenha,
+                  decoration: InputDecoration(
+                    labelText: 'Confirmar Senha',
+                    filled: true,
+                    fillColor: isDark ? Colors.grey.shade900 : Colors.white,
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide.none),
+                    prefixIcon: const Icon(Icons.lock_outline),
+                  ),
+                ),
+                const SizedBox(height: 30),
+                SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xff235224),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12)),
+                    ),
+                    onPressed: _tentarCadastrar,
+                    child: const Text('CADASTRAR FAMÍLIA',
+                        style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                            letterSpacing: 1.5)),
+                  ),
+                ),
+                const SizedBox(height: 30),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class TelaVerificacao2FA extends StatefulWidget {
+  final String familiaLogada;
+  final String donoFamilia;
+  final String emailDestino;
+
+  const TelaVerificacao2FA({
+    super.key,
+    required this.familiaLogada,
+    required this.donoFamilia,
+    required this.emailDestino,
+  });
+
+  @override
+  State<TelaVerificacao2FA> createState() => _TelaVerificacao2FAState();
+}
+
+class _TelaVerificacao2FAState extends State<TelaVerificacao2FA> {
+  final TextEditingController _codigoCtrl = TextEditingController();
+  String _codigoGerado = '';
+  bool _enviandoEmail = true;
+  bool _erroNoEnvio = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _gerarEEnviarCodigo();
+  }
+
+  // ⚙️ O MOTOR DE GERAÇÃO E DISPARO
+  Future<void> _gerarEEnviarCodigo() async {
+    // 1. Gera um código de 8 caracteres alfanuméricos em caixa alta
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    final rnd = Random.secure();
+    _codigoGerado = String.fromCharCodes(Iterable.generate(
+        8, (_) => chars.codeUnitAt(rnd.nextInt(chars.length))));
+
+    try {
+      // 2. Tenta bater no seu servidor Cloudflare
+      final response = await http.post(
+        Uri.parse(
+            'https://doub-email-sender.eduardoliveira2003.workers.dev'), // O SEU SERVIDOR!
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'emailDestino': widget.emailDestino,
+          'nomeDono': widget.donoFamilia,
+          'codigo2FA': _codigoGerado,
+        }),
+      );
+
+      if (response.statusCode == 200 && mounted) {
+        setState(() {
+          _enviandoEmail = false;
+        });
+      } else {
+        throw Exception(
+            'Erro ${response.statusCode} - Detalhe: ${response.body}');
+      }
+    } catch (e) {
+      debugPrint("Erro Email: $e");
+      if (mounted) {
+        setState(() {
+          _enviandoEmail = false;
+          _erroNoEnvio = true;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content:
+              Text('Erro: $e', style: const TextStyle(color: Colors.white)),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 8),
+        ));
+      }
+    }
+  }
+
+  void _verificarCodigo() async {
+    if (_codigoCtrl.text.trim().toUpperCase() == _codigoGerado) {
+      // SUCESSO! Salva o "Selo de Confiança" no aparelho
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(
+          'dispositivo_verificado_${widget.familiaLogada}', true);
+      await prefs.setString('familiaAberta', widget.familiaLogada);
+
+      if (!mounted) return;
+      // Manda o cara pro menu de avatares com o selo carimbado!
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(
+            builder: (context) => const TelaLogin(manterDesbloqueado: true)),
+        (route) => false,
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content:
+              Text('Código Inválido!', style: TextStyle(color: Colors.white)),
+          backgroundColor: Colors.red));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    bool isDark = Theme.of(context).brightness == Brightness.dark;
+    Color corFundo = isDark ? const Color(0xFF121212) : Colors.green.shade50;
+
+    return Scaffold(
+      backgroundColor: corFundo,
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        leading: IconButton(
+            icon: const Icon(Icons.arrow_back, color: Colors.green),
+            onPressed: () => Navigator.pop(context)),
+      ),
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 500),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 35),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.mark_email_read,
+                    size: 80, color: Colors.green),
+                const SizedBox(height: 20),
+                const Text('Verificação de Segurança',
+                    style:
+                        TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 10),
+                if (_enviandoEmail) ...[
+                  const CircularProgressIndicator(color: Colors.green),
+                  const SizedBox(height: 15),
+                  const Text(
+                      'Conectando aos servidores DOUB e enviando código...',
+                      style: TextStyle(color: Colors.grey),
+                      textAlign: TextAlign.center),
+                ] else if (_erroNoEnvio) ...[
+                  const Icon(Icons.error_outline, color: Colors.red, size: 50),
+                  const Text('Ops! O servidor de e-mails não respondeu.',
+                      style: TextStyle(color: Colors.red)),
+                ] else ...[
+                  Text(
+                      'Enviamos um código de 8 dígitos para o e-mail cadastrado na família ${widget.familiaLogada}.\n\nPor favor, digite-o abaixo:',
+                      style: const TextStyle(color: Colors.grey),
+                      textAlign: TextAlign.center),
+                  const SizedBox(height: 30),
+                  TextField(
+                    controller: _codigoCtrl,
+                    textCapitalization: TextCapitalization.characters,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                        fontSize: 24,
+                        letterSpacing: 5,
+                        fontWeight: FontWeight.bold),
+                    maxLength: 8,
+                    decoration: InputDecoration(
+                      hintText: 'A1B2C3D4',
+                      filled: true,
+                      fillColor: isDark ? Colors.grey.shade900 : Colors.white,
+                      border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide.none),
+                      counterText: '', // Esconde o "0/8" embaixo
+                    ),
+                  ),
+                  const SizedBox(height: 25),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 50,
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xff235224),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
+                      ),
+                      onPressed: _verificarCodigo,
+                      child: const Text('VERIFICAR DISPOSITIVO',
+                          style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                              letterSpacing: 1.5)),
+                    ),
+                  ),
+                ]
+              ],
+            ),
           ),
         ),
       ),
